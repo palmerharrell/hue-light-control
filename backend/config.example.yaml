@@ -1,0 +1,4 @@
+# Copy to config.yaml (gitignored) and fill in your real Hue bridge details.
+# Never commit config.yaml.
+bridge_ip: "192.168.x.x"
+api_key: "<hue-api-application-key>"
