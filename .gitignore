@@ -1,0 +1,22 @@
+# Old app source, kept for behavioral/UI reference only.
+reference/
+
+CLAUDE.md
+
+# Real Hue bridge credentials for local dev / deployment — never committed.
+.env
+.env.*
+!.env.example
+config.yaml
+config.local.*
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Node / Svelte
+node_modules/
+dist/
+.vite/
