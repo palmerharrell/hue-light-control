@@ -3,8 +3,8 @@ reference/
 
 CLAUDE.md
 
-# Local-only planning/analysis doc — not for the public repo.
-docs/old-app-analysis.md
+# Local-only planning/analysis docs — not for the public repo.
+docs/
 
 # Real Hue bridge credentials for local dev / deployment — never committed.
 .env
