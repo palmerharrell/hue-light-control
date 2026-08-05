@@ -29,12 +29,17 @@ DEVICETYPE = "hue-light-control#pairing"
 LINK_BUTTON_TIMEOUT_SECONDS = 60
 POLL_INTERVAL_SECONDS = 2
 
+# Transient failure modes we treat as "try again" rather than crashing:
+# unreachable/timed-out connections, and a non-JSON response from whatever's
+# at that IP.
+REQUEST_ERRORS = (urllib.error.URLError, json.JSONDecodeError)
+
 
 def discover_bridge_ip() -> str | None:
     try:
         with urllib.request.urlopen(DISCOVERY_URL, timeout=8) as resp:
             bridges = json.load(resp)
-    except (urllib.error.URLError, json.JSONDecodeError) as exc:
+    except REQUEST_ERRORS as exc:
         print(f"Cloud discovery failed: {exc}", file=sys.stderr)
         return None
     return bridges[0]["internalipaddress"] if bridges else None
@@ -59,8 +64,12 @@ def request_api_key(ip: str) -> str:
     )
     deadline = time.monotonic() + LINK_BUTTON_TIMEOUT_SECONDS
     while time.monotonic() < deadline:
-        with urllib.request.urlopen(req, timeout=5) as resp:
-            result = json.load(resp)[0]
+        try:
+            with urllib.request.urlopen(req, timeout=5) as resp:
+                result = json.load(resp)[0]
+        except REQUEST_ERRORS:
+            time.sleep(POLL_INTERVAL_SECONDS)
+            continue
         if "success" in result:
             return result["success"]["username"]
         error = result.get("error", {})
@@ -71,8 +80,13 @@ def request_api_key(ip: str) -> str:
 
 
 def write_config(ip: str, api_key: str) -> None:
+    existing = {}
+    if CONFIG_PATH.exists():
+        with CONFIG_PATH.open() as f:
+            existing = yaml.safe_load(f) or {}
+    existing.update({"bridge_ip": ip, "api_key": api_key})
     with CONFIG_PATH.open("w") as f:
-        yaml.safe_dump({"bridge_ip": ip, "api_key": api_key}, f)
+        yaml.safe_dump(existing, f)
 
 
 def main() -> int:
@@ -85,7 +99,11 @@ def main() -> int:
         print("Could not discover a bridge. Pass --ip <address> to skip discovery.", file=sys.stderr)
         return 1
 
-    info = get_bridge_info(ip)
+    try:
+        info = get_bridge_info(ip)
+    except REQUEST_ERRORS as exc:
+        print(f"Could not reach bridge at {ip}: {exc}", file=sys.stderr)
+        return 1
     print(f"Found bridge: model {info.get('modelid')}, API {info.get('apiversion')}, sw {info.get('swversion')}")
 
     try:
