@@ -1,4 +1,5 @@
 import colorsys
+import logging
 import math
 from typing import Optional
 
@@ -6,6 +7,8 @@ import httpx
 from pydantic import BaseModel
 
 from app.config import BridgeConfig
+
+logger = logging.getLogger(__name__)
 
 
 class BridgeNotConfigured(Exception):
@@ -84,13 +87,19 @@ def _ct_to_rgb_hex(mired: int) -> str:
 
 def _light_color(state: dict) -> Optional[str]:
     mode = state.get("colormode")
-    if mode == "xy" and "xy" in state:
-        x, y = state["xy"]
-        return _xy_to_rgb_hex(x, y)
-    if mode == "hs" and "hue" in state and "sat" in state:
-        return _hs_to_rgb_hex(state["hue"], state["sat"])
-    if mode == "ct" and "ct" in state:
-        return _ct_to_rgb_hex(state["ct"])
+    try:
+        if mode == "xy" and "xy" in state:
+            x, y = state["xy"]
+            return _xy_to_rgb_hex(x, y)
+        if mode == "hs" and "hue" in state and "sat" in state:
+            return _hs_to_rgb_hex(state["hue"], state["sat"])
+        if mode == "ct" and "ct" in state:
+            return _ct_to_rgb_hex(state["ct"])
+    except Exception:
+        # A single bulb reporting a malformed color value (e.g. ct=0)
+        # shouldn't take down the whole /api/lights response.
+        logger.warning("Could not compute color for light state %r", state, exc_info=True)
+        return None
     return None
 
 
@@ -117,7 +126,12 @@ async def get_lights(config: BridgeConfig) -> list[Light]:
             resp.raise_for_status()
             data = resp.json()
     except httpx.HTTPError as exc:
-        raise BridgeUnreachable(str(exc)) from exc
+        # Don't forward str(exc) to the caller: httpx.HTTPStatusError's
+        # message embeds the full request URL, which contains api_key.
+        # That would leak the credential to the browser via the 502
+        # response body — log it server-side instead.
+        logger.warning("Request to Hue bridge failed: %s", exc)
+        raise BridgeUnreachable("could not reach the bridge") from exc
 
     if isinstance(data, list):
         error = data[0].get("error", {}) if data else {}

@@ -6,7 +6,6 @@
   <div class="header">
     <span
       class="swatch"
-      class:off={!light.on}
       style:background-color={light.on ? (light.color ?? '#ffe9b3') : undefined}
     ></span>
     <span class="name">{light.name}</span>
