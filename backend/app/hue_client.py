@@ -39,6 +39,13 @@ class Scene(BaseModel):
     id: str
     name: str
     light_count: int
+    group_id: Optional[str] = None
+
+
+class Zone(BaseModel):
+    id: str
+    name: str
+    light_count: int
 
 
 def _to_hex(r: float, g: float, b: float) -> str:
@@ -192,6 +199,9 @@ def _to_scene(scene_id: str, raw: dict) -> Scene:
         id=scene_id,
         name=raw.get("name", f"Scene {scene_id}"),
         light_count=len(raw.get("lights", [])),
+        # Only GroupScenes have this; ties the scene to the group (room/zone)
+        # it was created for. Absent for standalone LightScenes.
+        group_id=raw.get("group"),
     )
 
 
@@ -203,4 +213,24 @@ async def get_scenes(config: BridgeConfig) -> list[Scene]:
         # "Recycle" scenes are bridge-internal, created by apps to save/restore
         # state (e.g. before a light effect) — not scenes a user created.
         if not raw.get("recycle", False)
+    ]
+
+
+def _to_zone(group_id: str, raw: dict) -> Zone:
+    return Zone(
+        id=group_id,
+        name=raw.get("name", f"Zone {group_id}"),
+        light_count=len(raw.get("lights", [])),
+    )
+
+
+async def get_zones(config: BridgeConfig) -> list[Zone]:
+    data = await _bridge_get(config, "groups")
+    return [
+        _to_zone(group_id, raw)
+        for group_id, raw in data.items()
+        # The bridge's "groups" endpoint also returns Rooms, Entertainment
+        # areas, and the LightGroups apps create — only Zones are user-defined
+        # cross-room groupings we want surfaced here.
+        if raw.get("type") == "Zone"
     ]

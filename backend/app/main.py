@@ -7,8 +7,10 @@ from app.hue_client import (
     BridgeUnreachable,
     Light,
     Scene,
+    Zone,
     get_lights,
     get_scenes,
+    get_zones,
 )
 
 app = FastAPI(title="Hue Light Control API")
@@ -43,6 +45,17 @@ async def list_scenes() -> list[Scene]:
     config = load_config()
     try:
         return await get_scenes(config)
+    except BridgeNotConfigured:
+        raise HTTPException(status_code=503, detail="Bridge not configured")
+    except BridgeUnreachable as exc:
+        raise HTTPException(status_code=502, detail=f"Bridge unreachable: {exc}")
+
+
+@app.get("/api/zones")
+async def list_zones() -> list[Zone]:
+    config = load_config()
+    try:
+        return await get_zones(config)
     except BridgeNotConfigured:
         raise HTTPException(status_code=503, detail="Bridge not configured")
     except BridgeUnreachable as exc:
