@@ -3,6 +3,15 @@
   import LightCard from './LightCard.svelte'
   import SceneCard from './SceneCard.svelte'
 
+  async function fetchJson(url) {
+    const res = await fetch(url)
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}))
+      throw new Error(body.detail ?? `Request failed (${res.status})`)
+    }
+    return res.json()
+  }
+
   let lights = $state([])
   let lightsLoading = $state(true)
   let lightsError = $state(null)
@@ -19,12 +28,7 @@
     lightsLoading = true
     lightsError = null
     try {
-      const res = await fetch('/api/lights')
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body.detail ?? `Request failed (${res.status})`)
-      }
-      lights = await res.json()
+      lights = await fetchJson('/api/lights')
     } catch (err) {
       lightsError = err.message
     } finally {
@@ -36,12 +40,7 @@
     scenesLoading = true
     scenesError = null
     try {
-      const res = await fetch('/api/scenes')
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body.detail ?? `Request failed (${res.status})`)
-      }
-      scenes = await res.json()
+      scenes = await fetchJson('/api/scenes')
     } catch (err) {
       scenesError = err.message
     } finally {
@@ -53,12 +52,7 @@
     zonesLoading = true
     zonesError = null
     try {
-      const res = await fetch('/api/zones')
-      if (!res.ok) {
-        const body = await res.json().catch(() => ({}))
-        throw new Error(body.detail ?? `Request failed (${res.status})`)
-      }
-      zones = await res.json()
+      zones = await fetchJson('/api/zones')
     } catch (err) {
       zonesError = err.message
     } finally {
@@ -74,8 +68,8 @@
 
   // Buckets scenes under the zone they belong to. Scenes tied to a Room, an
   // Entertainment area, or no group at all (standalone LightScenes) don't
-  // match any zone and land in "Other" — including, transiently, every scene
-  // while zones are still loading or failed to load.
+  // match any zone and land in "Other" — as does every scene if zones failed
+  // to load.
   let zoneGroups = $derived.by(() => {
     const byId = new Map(zones.map((zone) => [zone.id, { id: zone.id, name: zone.name, scenes: [] }]))
     const other = { id: 'other', name: 'Other', scenes: [] }
@@ -110,10 +104,7 @@
 
   <section>
     <h2>Scenes</h2>
-    {#if zonesError}
-      <p class="error">Couldn't load zones ({zonesError}) — showing scenes ungrouped.</p>
-    {/if}
-    {#if scenesLoading}
+    {#if scenesLoading || zonesLoading}
       <p>Loading scenes…</p>
     {:else if scenesError}
       <p class="error">{scenesError}</p>
@@ -121,6 +112,12 @@
     {:else if scenes.length === 0}
       <p>No scenes found.</p>
     {:else}
+      {#if zonesError}
+        <p class="error">
+          Couldn't load zones ({zonesError}) — showing scenes ungrouped.
+          <button onclick={loadZones}>Retry</button>
+        </p>
+      {/if}
       {#each zoneGroups as group (group.id)}
         <div class="zone-group">
           <h3>{group.name}</h3>
