@@ -1,3 +1,4 @@
+import asyncio
 import colorsys
 import logging
 import math
@@ -7,9 +8,14 @@ import httpx
 from pydantic import BaseModel
 
 from app.bridge_discovery import rediscover_bridge_ip
-from app.config import BridgeConfig, update_bridge_ip
+from app.config import BridgeConfig, load_config, update_bridge_ip
 
 logger = logging.getLogger(__name__)
+
+# Serializes rediscovery so concurrent requests (e.g. the frontend's
+# lights + scenes calls firing together) don't each run their own SSDP/cloud
+# search and race to write config.yaml.
+_rediscovery_lock = asyncio.Lock()
 
 
 class BridgeNotConfigured(Exception):
@@ -150,19 +156,30 @@ async def _bridge_get(config: BridgeConfig, path: str) -> dict:
         # — log it server-side instead.
         logger.warning("Could not reach bridge at %s: %s", config.bridge_ip, exc)
 
-    new_ip = await rediscover_bridge_ip(config.api_key)
-    if new_ip is None:
-        raise BridgeUnreachable("could not reach the bridge")
+    async with _rediscovery_lock:
+        # A concurrent request may have already rediscovered and persisted a
+        # working IP while we were waiting for the lock — try that first.
+        current_ip = load_config().bridge_ip
+        if current_ip and current_ip != config.bridge_ip:
+            try:
+                return await _request_bridge(current_ip, config.api_key, path)
+            except httpx.HTTPError:
+                pass
 
-    try:
-        data = await _request_bridge(new_ip, config.api_key, path)
-    except httpx.HTTPError as exc:
-        logger.warning("Rediscovered bridge at %s also unreachable: %s", new_ip, exc)
-        raise BridgeUnreachable("could not reach the bridge") from exc
+        new_ip = await rediscover_bridge_ip(config.api_key)
+        if new_ip is None:
+            raise BridgeUnreachable("could not reach the bridge")
 
-    logger.info("Bridge IP changed (%s -> %s), updating config.yaml", config.bridge_ip, new_ip)
-    update_bridge_ip(new_ip)
-    return data
+        try:
+            data = await _request_bridge(new_ip, config.api_key, path)
+        except httpx.HTTPError as exc:
+            logger.warning("Rediscovered bridge at %s also unreachable: %s", new_ip, exc)
+            raise BridgeUnreachable("could not reach the bridge") from exc
+
+        if new_ip != config.bridge_ip:
+            logger.info("Bridge IP changed (%s -> %s), updating config.yaml", config.bridge_ip, new_ip)
+            update_bridge_ip(new_ip)
+        return data
 
 
 async def get_lights(config: BridgeConfig) -> list[Light]:
