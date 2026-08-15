@@ -18,3 +18,10 @@ def load_config() -> BridgeConfig:
     with CONFIG_PATH.open() as f:
         data = yaml.safe_load(f) or {}
     return BridgeConfig(**data)
+
+
+def update_bridge_ip(ip: str) -> None:
+    config = load_config()
+    config.bridge_ip = ip
+    with CONFIG_PATH.open("w") as f:
+        yaml.safe_dump(config.model_dump(exclude_none=True), f)
