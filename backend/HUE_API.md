@@ -32,21 +32,31 @@ and stored in `config.yaml` as `api_key`.
 Relevant `state` fields returned per light: `on`, `bri`, `hue`, `sat`, `xy`,
 `ct`, `colormode`, `reachable`.
 
-## Groups (rooms/zones)
+## Groups (rooms/zones) (issue: get Zones, group Scenes by Zone)
 
 | Method | Path | Purpose |
 |---|---|---|
-| GET | `/api/<username>/groups` | List groups (rooms/zones) and their member lights. |
+| GET | `/api/<username>/groups` | List groups and their member lights. |
 | GET | `/api/<username>/groups/<id>` | Single group. |
 | PUT | `/api/<username>/groups/<id>/action` | Apply state to every light in the group at once; also how a scene gets activated (see below). |
 
-## Scenes (issue: display Scenes)
+A group's `type` distinguishes what it represents: `Room` (one light belongs
+to at most one room), `Zone` (user-defined, can span rooms and overlap),
+`Entertainment` (entertainment areas), plus bridge/app-internal `LightGroup`s.
+Only `Zone` groups are surfaced by this app's `/api/zones` endpoint.
+
+## Scenes (issue: display Scenes; issue: group Scenes by Zone)
 
 | Method | Path | Purpose |
 |---|---|---|
 | GET | `/api/<username>/scenes` | List configured scenes (id, name, member lights). |
 | GET | `/api/<username>/scenes/<id>` | Scene detail, including per-light stored states. |
 | PUT | `/api/<username>/groups/<id>/action` | Activate a scene: body `{"scene": "<scene-id>"}`. Hue has no dedicated "activate" endpoint — scenes are applied through the owning group's action endpoint. |
+
+A `GroupScene` carries a `group` field naming the group (room, zone, or
+other) it was created for; this app's `/api/scenes` passes that through as
+`group_id` so the frontend can bucket scenes under their owning zone.
+Standalone `LightScene`s have no `group` and surface with `group_id: null`.
 
 ## Notes
 

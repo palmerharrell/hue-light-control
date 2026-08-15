@@ -11,6 +11,10 @@
   let scenesLoading = $state(true)
   let scenesError = $state(null)
 
+  let zones = $state([])
+  let zonesLoading = $state(true)
+  let zonesError = $state(null)
+
   async function loadLights() {
     lightsLoading = true
     lightsError = null
@@ -45,9 +49,41 @@
     }
   }
 
+  async function loadZones() {
+    zonesLoading = true
+    zonesError = null
+    try {
+      const res = await fetch('/api/zones')
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}))
+        throw new Error(body.detail ?? `Request failed (${res.status})`)
+      }
+      zones = await res.json()
+    } catch (err) {
+      zonesError = err.message
+    } finally {
+      zonesLoading = false
+    }
+  }
+
   onMount(() => {
     loadLights()
     loadScenes()
+    loadZones()
+  })
+
+  // Buckets scenes under the zone they belong to. Scenes tied to a Room, an
+  // Entertainment area, or no group at all (standalone LightScenes) don't
+  // match any zone and land in "Other" — including, transiently, every scene
+  // while zones are still loading or failed to load.
+  let zoneGroups = $derived.by(() => {
+    const byId = new Map(zones.map((zone) => [zone.id, { id: zone.id, name: zone.name, scenes: [] }]))
+    const other = { id: 'other', name: 'Other', scenes: [] }
+    for (const scene of scenes) {
+      const group = byId.get(scene.group_id) ?? other
+      group.scenes.push(scene)
+    }
+    return [...byId.values(), other].filter((group) => group.scenes.length > 0)
   })
 </script>
 
@@ -74,6 +110,9 @@
 
   <section>
     <h2>Scenes</h2>
+    {#if zonesError}
+      <p class="error">Couldn't load zones ({zonesError}) — showing scenes ungrouped.</p>
+    {/if}
     {#if scenesLoading}
       <p>Loading scenes…</p>
     {:else if scenesError}
@@ -82,11 +121,16 @@
     {:else if scenes.length === 0}
       <p>No scenes found.</p>
     {:else}
-      <div class="grid">
-        {#each scenes as scene (scene.id)}
-          <SceneCard {scene} />
-        {/each}
-      </div>
+      {#each zoneGroups as group (group.id)}
+        <div class="zone-group">
+          <h3>{group.name}</h3>
+          <div class="grid">
+            {#each group.scenes as scene (scene.id)}
+              <SceneCard {scene} />
+            {/each}
+          </div>
+        </div>
+      {/each}
     {/if}
   </section>
 </main>
@@ -100,6 +144,16 @@
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
     gap: 1rem;
+  }
+
+  .zone-group + .zone-group {
+    margin-top: 1.5rem;
+  }
+
+  .zone-group h3 {
+    margin: 0 0 0.75rem;
+    font-size: 0.95rem;
+    color: light-dark(#555, #aaa);
   }
 
   .error {
