@@ -1,3 +1,4 @@
+import asyncio
 import colorsys
 import logging
 import math
@@ -6,9 +7,15 @@ from typing import Optional
 import httpx
 from pydantic import BaseModel
 
-from app.config import BridgeConfig
+from app.bridge_discovery import rediscover_bridge_ip
+from app.config import BridgeConfig, load_config, update_bridge_ip
 
 logger = logging.getLogger(__name__)
+
+# Serializes rediscovery so concurrent requests (e.g. the frontend's
+# lights + scenes calls firing together) don't each run their own SSDP/cloud
+# search and race to write config.yaml.
+_rediscovery_lock = asyncio.Lock()
 
 
 class BridgeNotConfigured(Exception):
@@ -121,29 +128,58 @@ def _to_light(light_id: str, raw: dict) -> Light:
     )
 
 
-async def _bridge_get(config: BridgeConfig, path: str) -> dict:
-    if not config.bridge_ip or not config.api_key:
-        raise BridgeNotConfigured()
-
-    url = f"http://{config.bridge_ip}/api/{config.api_key}/{path}"
-    try:
-        async with httpx.AsyncClient(timeout=5.0) as client:
-            resp = await client.get(url)
-            resp.raise_for_status()
-            data = resp.json()
-    except httpx.HTTPError as exc:
-        # Don't forward str(exc) to the caller: httpx.HTTPStatusError's
-        # message embeds the full request URL, which contains api_key.
-        # That would leak the credential to the browser via the 502
-        # response body — log it server-side instead.
-        logger.warning("Request to Hue bridge failed: %s", exc)
-        raise BridgeUnreachable("could not reach the bridge") from exc
+async def _request_bridge(ip: str, api_key: str, path: str) -> dict:
+    url = f"http://{ip}/api/{api_key}/{path}"
+    async with httpx.AsyncClient(timeout=5.0) as client:
+        resp = await client.get(url)
+        resp.raise_for_status()
+        data = resp.json()
 
     if isinstance(data, list):
         error = data[0].get("error", {}) if data else {}
         raise BridgeUnreachable(error.get("description", "bridge returned an error"))
 
     return data
+
+
+async def _bridge_get(config: BridgeConfig, path: str) -> dict:
+    if not config.bridge_ip or not config.api_key:
+        raise BridgeNotConfigured()
+
+    try:
+        return await _request_bridge(config.bridge_ip, config.api_key, path)
+    except httpx.HTTPError as exc:
+        # A network-level failure (unreachable/timed out) — the bridge may
+        # have gotten a new IP. Don't forward str(exc): httpx.HTTPStatusError's
+        # message embeds the full request URL, which contains api_key. That
+        # would leak the credential to the browser via the 502 response body
+        # — log it server-side instead.
+        logger.warning("Could not reach bridge at %s: %s", config.bridge_ip, exc)
+
+    async with _rediscovery_lock:
+        # A concurrent request may have already rediscovered and persisted a
+        # working IP while we were waiting for the lock — try that first.
+        current_ip = load_config().bridge_ip
+        if current_ip and current_ip != config.bridge_ip:
+            try:
+                return await _request_bridge(current_ip, config.api_key, path)
+            except httpx.HTTPError:
+                pass
+
+        new_ip = await rediscover_bridge_ip(config.api_key)
+        if new_ip is None:
+            raise BridgeUnreachable("could not reach the bridge")
+
+        try:
+            data = await _request_bridge(new_ip, config.api_key, path)
+        except httpx.HTTPError as exc:
+            logger.warning("Rediscovered bridge at %s also unreachable: %s", new_ip, exc)
+            raise BridgeUnreachable("could not reach the bridge") from exc
+
+        if new_ip != config.bridge_ip:
+            logger.info("Bridge IP changed (%s -> %s), updating config.yaml", config.bridge_ip, new_ip)
+            update_bridge_ip(new_ip)
+        return data
 
 
 async def get_lights(config: BridgeConfig) -> list[Light]:
