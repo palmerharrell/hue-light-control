@@ -2,7 +2,14 @@ from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 
 from app.config import load_config
-from app.hue_client import BridgeNotConfigured, BridgeUnreachable, Light, get_lights
+from app.hue_client import (
+    BridgeNotConfigured,
+    BridgeUnreachable,
+    Light,
+    Scene,
+    get_lights,
+    get_scenes,
+)
 
 app = FastAPI(title="Hue Light Control API")
 
@@ -25,6 +32,17 @@ async def list_lights() -> list[Light]:
     config = load_config()
     try:
         return await get_lights(config)
+    except BridgeNotConfigured:
+        raise HTTPException(status_code=503, detail="Bridge not configured")
+    except BridgeUnreachable as exc:
+        raise HTTPException(status_code=502, detail=f"Bridge unreachable: {exc}")
+
+
+@app.get("/api/scenes")
+async def list_scenes() -> list[Scene]:
+    config = load_config()
+    try:
+        return await get_scenes(config)
     except BridgeNotConfigured:
         raise HTTPException(status_code=503, detail="Bridge not configured")
     except BridgeUnreachable as exc:

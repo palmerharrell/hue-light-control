@@ -28,6 +28,12 @@ class Light(BaseModel):
     reachable: bool
 
 
+class Scene(BaseModel):
+    id: str
+    name: str
+    light_count: int
+
+
 def _to_hex(r: float, g: float, b: float) -> str:
     return "#{:02x}{:02x}{:02x}".format(round(r * 255), round(g * 255), round(b * 255))
 
@@ -115,11 +121,11 @@ def _to_light(light_id: str, raw: dict) -> Light:
     )
 
 
-async def get_lights(config: BridgeConfig) -> list[Light]:
+async def _bridge_get(config: BridgeConfig, path: str) -> dict:
     if not config.bridge_ip or not config.api_key:
         raise BridgeNotConfigured()
 
-    url = f"http://{config.bridge_ip}/api/{config.api_key}/lights"
+    url = f"http://{config.bridge_ip}/api/{config.api_key}/{path}"
     try:
         async with httpx.AsyncClient(timeout=5.0) as client:
             resp = await client.get(url)
@@ -137,4 +143,22 @@ async def get_lights(config: BridgeConfig) -> list[Light]:
         error = data[0].get("error", {}) if data else {}
         raise BridgeUnreachable(error.get("description", "bridge returned an error"))
 
+    return data
+
+
+async def get_lights(config: BridgeConfig) -> list[Light]:
+    data = await _bridge_get(config, "lights")
     return [_to_light(light_id, raw) for light_id, raw in data.items()]
+
+
+def _to_scene(scene_id: str, raw: dict) -> Scene:
+    return Scene(
+        id=scene_id,
+        name=raw.get("name", f"Scene {scene_id}"),
+        light_count=len(raw.get("lights", [])),
+    )
+
+
+async def get_scenes(config: BridgeConfig) -> list[Scene]:
+    data = await _bridge_get(config, "scenes")
+    return [_to_scene(scene_id, raw) for scene_id, raw in data.items()]
