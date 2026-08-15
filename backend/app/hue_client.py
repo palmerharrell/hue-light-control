@@ -161,4 +161,10 @@ def _to_scene(scene_id: str, raw: dict) -> Scene:
 
 async def get_scenes(config: BridgeConfig) -> list[Scene]:
     data = await _bridge_get(config, "scenes")
-    return [_to_scene(scene_id, raw) for scene_id, raw in data.items()]
+    return [
+        _to_scene(scene_id, raw)
+        for scene_id, raw in data.items()
+        # "Recycle" scenes are bridge-internal, created by apps to save/restore
+        # state (e.g. before a light effect) — not scenes a user created.
+        if not raw.get("recycle", False)
+    ]
