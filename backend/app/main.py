@@ -1,4 +1,5 @@
 import asyncio
+import os
 from typing import Optional
 
 from fastapi import FastAPI, HTTPException, Request
@@ -26,7 +27,10 @@ app = FastAPI(title="Hue Light Control API")
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173"],
+    # Defaults to the Vite dev server's origin; the prod deploy overrides
+    # this via docker-compose.yml since nginx proxies the frontend and API
+    # same-origin there.
+    allow_origins=[os.environ.get("CORS_ORIGIN", "http://localhost:5173")],
     allow_methods=["*"],
     allow_headers=["*"],
 )
