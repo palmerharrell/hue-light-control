@@ -108,6 +108,28 @@ creating one: `lightstates` matched the lights' actual current state).
 There is no way to create a scene with lights set to values other than
 whatever they're currently at.
 
+### Activating a scene (issue: activate Scenes)
+
+Confirms what the Groups section above already documents: there's no
+scene-specific "activate" endpoint. The app's `POST
+/api/scenes/<id>/activate` route (body: `{"group_id": "<id>", "brightness_pct":
+<1-100, optional>}`) turns around and issues `PUT
+/api/<username>/groups/<group_id>/action` with `{"scene": "<id>"}` — the
+same call the Groups/Scenes sections describe. `group_id` must be supplied
+by the caller (the frontend gets it from the scene's own `group_id`, which
+is null for a standalone `LightScene` — those can't be activated this way
+and the frontend disables them).
+
+Since activation is a PUT (idempotent — resending "activate this scene"
+twice is harmless), it goes through the normal rediscovery-retry path,
+unlike scene creation's POST.
+
+`brightness_pct`, when given, is sent as `bri` in the same body alongside
+`scene`. This combination has **not** been verified against a real
+bridge — whether the bridge actually applies both, or silently drops one,
+is unconfirmed. It's accepted now for forward-compatibility with a future
+per-scene-brightness feature but isn't exercised by the frontend yet.
+
 ## Notes
 
 - This is the CLIP v1 local API (plain HTTP, no cert handling needed), not

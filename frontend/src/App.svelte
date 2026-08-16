@@ -132,6 +132,21 @@
     const scene = await postJson('/api/scenes', { name, light_ids: lightIds, group_id: groupId })
     scenes = [...scenes, scene]
   }
+
+  // Unlike toggleLight, there's no meaningful "prior value" to optimistically
+  // set and revert for a one-shot action like activating a scene — just
+  // surface a per-card error on failure. SceneCard guards against overlapping
+  // double-click requests itself (same pattern as LightCard's toggle button).
+  async function activateScene(sceneId, groupId) {
+    const scene = scenes.find((s) => s.id === sceneId)
+    if (!scene) return
+    scene.activateError = null
+    try {
+      await postJson(`/api/scenes/${sceneId}/activate`, { group_id: groupId })
+    } catch (err) {
+      scene.activateError = err.message
+    }
+  }
 </script>
 
 <main>
@@ -187,7 +202,7 @@
           <h3>{group.name}</h3>
           <div class="grid">
             {#each group.scenes as scene (scene.id)}
-              <SceneCard {scene} />
+              <SceneCard {scene} onActivate={activateScene} />
             {/each}
           </div>
         </div>

@@ -324,6 +324,27 @@ async def set_light_state(
     await _bridge_request(config, f"lights/{light_id}/state", method="PUT", json_body=body)
 
 
+async def activate_scene(
+    config: BridgeConfig, group_id: str, scene_id: str, brightness_pct: Optional[int] = None
+) -> None:
+    """Activate a scene via its owning group's action endpoint.
+
+    Hue has no dedicated "activate scene" endpoint — scenes are applied by
+    PUTting {"scene": <id>} to the group's action endpoint (see
+    HUE_API.md's Scenes section). This is a PUT, so unlike create_scene's
+    POST it's safe to let it go through the normal rediscovery-retry path:
+    resending "activate this scene" twice is harmless.
+    """
+    body = {"scene": scene_id}
+    if brightness_pct is not None:
+        # Unverified: whether the bridge actually applies `bri` alongside
+        # `scene` in a single call, or silently ignores/overrides one of
+        # them, hasn't been confirmed against a real bridge. If it doesn't
+        # behave as expected, this may need to become two sequential calls.
+        body["bri"] = _pct_to_bri(brightness_pct)
+    await _bridge_request(config, f"groups/{group_id}/action", method="PUT", json_body=body)
+
+
 async def get_group_light_count(config: BridgeConfig, group_id: str) -> int:
     """Light count for a single group.
 
