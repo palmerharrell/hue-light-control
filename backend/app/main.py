@@ -20,9 +20,12 @@ from app.hue_client import (
     get_lights,
     get_scenes,
     get_zones,
+    play_scene,
     set_group_state,
     set_light_state,
+    set_scene_speed,
     set_zone_brightness_for_on_lights,
+    stop_scene,
 )
 
 app = FastAPI(title="Hue Light Control API")
@@ -145,6 +148,37 @@ class SceneActivateRequest(BaseModel):
 async def activate_scene_route(scene_id: str, body: SceneActivateRequest):
     config = load_config()
     await activate_scene(config, body.group_id, scene_id)
+    return {"status": "ok"}
+
+
+class ScenePlayRequest(BaseModel):
+    # CLIP v2's speed range is 0-1; 0.5 mirrors the official app's default
+    # slider position for a scene that hasn't been played before.
+    speed: float = Field(default=0.5, ge=0, le=1)
+
+
+class SceneSpeedRequest(BaseModel):
+    speed: float = Field(..., ge=0, le=1)
+
+
+@app.post("/api/scenes/{scene_id}/play")
+async def play_scene_route(scene_id: str, body: ScenePlayRequest = ScenePlayRequest()):
+    config = load_config()
+    await play_scene(config, scene_id, body.speed)
+    return {"status": "ok"}
+
+
+@app.post("/api/scenes/{scene_id}/stop")
+async def stop_scene_route(scene_id: str):
+    config = load_config()
+    await stop_scene(config, scene_id)
+    return {"status": "ok"}
+
+
+@app.put("/api/scenes/{scene_id}/speed")
+async def set_scene_speed_route(scene_id: str, body: SceneSpeedRequest):
+    config = load_config()
+    await set_scene_speed(config, scene_id, body.speed)
     return {"status": "ok"}
 
 

@@ -169,11 +169,50 @@ each so future-us doesn't have to re-derive it.
 | Capabilities | `GET /api/<username>/capabilities` | Not implementing — informational (resource limits like max scenes/groups); no current need to check quota before writes. |
 | Full datastore dump | `GET /api/<username>/` | Not implementing as a route — useful for debugging/exploration only, already covered ad hoc via `scripts/pair_bridge.py`-style scripts when needed. |
 
+## Dynamic scene playback (CLIP v2) (issue: play/pause a Scene, like the official app)
+
+CLIP v1 has no concept of animating between a scene's colors — that's a v2
+API entirely (`https://<bridge-ip>/clip/v2/resource/...`), which this app
+otherwise avoids (see Notes below). Only scenes with a multi-color
+`palette` can actually animate; the bridge doesn't reject `dynamic_palette`
+outright for a single-color scene, but there's nothing to cycle between.
+
+Auth is a header instead of a URL segment: `hue-application-key:
+<api_key>` (same `api_key` as v1 — one pairing covers both APIs). The
+bridge's cert is self-signed and scoped to its own identity, not its LAN
+IP, so hostname validation can never pass locally — the backend's v2 client
+uses `verify=False` (accepted practice for local bridge access; traffic is
+still encrypted, just not CA-validated).
+
+v2 resources are addressed by UUID, not v1's small integer ids, and
+there's no direct conversion. `GET /clip/v2/resource/scene` returns every
+scene with an `id_v1` field (e.g. `"/scenes/12"`) — the only documented way
+to resolve a v1 scene id to its v2 UUID. The backend does this lookup on
+every play/stop/speed call rather than caching the mapping, since the
+bridge doesn't expose any change-notification for it and correctness
+matters more than the extra round-trip for these convenience actions.
+
+| Method | Path | Purpose |
+|---|---|---|
+| GET | `/clip/v2/resource/scene` | List scenes (used here only to resolve `id_v1` -> UUID). |
+| PUT | `/clip/v2/resource/scene/<uuid>` | Body `{"recall": {"action": "dynamic_palette"}}` starts playback; `{"recall": {"action": "static"}}` stops it (re-applies the scene as a fixed snapshot — v2 has no separate "pause" verb); `{"speed": <0-1>}` adjusts animation speed. |
+
+**Confirmed against a real bridge**: `recall` and `speed` can't be set in
+the same PUT — combining them is rejected with `{"errors": [{"description":
+"Recall cannot be combined with modifying 'speed'"}]}`. Starting playback
+at a specific speed therefore takes two sequential PUTs: set `speed` first,
+then `recall.action: dynamic_palette` second.
+
+Unlike v1 (always 200, with an `[{"error": ...}]`-shaped body signaling
+failure), v2 uses real HTTP status codes for errors — a 400 with an
+`errors` array in the JSON body, checked via `raise_for_status()` alone.
+
 ## Notes
 
-- This is the CLIP v1 local API (plain HTTP, no cert handling needed), not
-  the newer CLIP v2/remote API. v1 is what `scripts/pair_bridge.py` already
-  pairs against and is sufficient for LAN-only proxying.
+- Aside from the dynamic-playback endpoints above, this app uses the CLIP
+  v1 local API (plain HTTP, no cert handling needed) rather than v2. v1 is
+  what `scripts/pair_bridge.py` pairs against and is sufficient for
+  LAN-only proxying of everything else.
 - The backend is the only thing that ever holds `<username>`/`api_key` —
   per the architecture in CLAUDE.md, the browser only talks to the backend,
   never directly to the bridge.
