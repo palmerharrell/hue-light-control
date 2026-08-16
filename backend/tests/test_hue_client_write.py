@@ -106,6 +106,26 @@ async def test_network_error_triggers_rediscovery(monkeypatch):
     assert result == [{"success": {"/lights/1/state/bri": 50}}]
 
 
+@respx.mock
+async def test_post_network_error_skips_rediscovery(monkeypatch):
+    # Unlike GET/PUT, a POST (e.g. create_scene) is not idempotent — blindly
+    # resending the same body after a network failure could create a
+    # duplicate scene if the original request actually reached the bridge
+    # before the connection dropped. So a POST should raise directly on a
+    # network error rather than attempting rediscovery-and-resend.
+    config = BridgeConfig(bridge_ip="192.168.x.x", api_key="test-api-key")
+
+    async def fail_if_called(api_key):
+        raise AssertionError("rediscovery should not run for a POST network error")
+
+    monkeypatch.setattr("app.hue_client.rediscover_bridge_ip", fail_if_called)
+
+    respx.post(f"{BRIDGE_URL}/scenes").mock(side_effect=httpx.ConnectError("connection refused"))
+
+    with pytest.raises(BridgeUnreachable, match="could not reach the bridge"):
+        await _bridge_request(config, "scenes", method="POST", json_body={"name": "Test"})
+
+
 @pytest.mark.parametrize(
     ("pct", "bri"),
     [

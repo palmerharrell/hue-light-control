@@ -2,7 +2,8 @@
   import { onMount } from 'svelte'
   import LightCard from './LightCard.svelte'
   import SceneCard from './SceneCard.svelte'
-  import { fetchJson } from './api.js'
+  import CreateSceneForm from './CreateSceneForm.svelte'
+  import { fetchJson, postJson } from './api.js'
 
   let lights = $state([])
   let lightsLoading = $state(true)
@@ -71,6 +72,13 @@
     }
     return [...byId.values(), other].filter((group) => group.scenes.length > 0)
   })
+
+  let showCreateForm = $state(false)
+
+  async function createScene(name, lightIds, groupId) {
+    const scene = await postJson('/api/scenes', { name, light_ids: lightIds, group_id: groupId })
+    scenes = [...scenes, scene]
+  }
 </script>
 
 <main>
@@ -95,7 +103,18 @@
   </section>
 
   <section>
-    <h2>Scenes</h2>
+    <div class="section-header">
+      <h2>Scenes</h2>
+      <button onclick={() => (showCreateForm = true)}>+ New Scene</button>
+    </div>
+    {#if showCreateForm}
+      <CreateSceneForm
+        {lights}
+        {zones}
+        onCreate={createScene}
+        onClose={() => (showCreateForm = false)}
+      />
+    {/if}
     {#if scenesLoading || zonesLoading}
       <p>Loading scenes…</p>
     {:else if scenesError}
@@ -127,6 +146,27 @@
 <style>
   section + section {
     margin-top: 2rem;
+  }
+
+  .section-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+  }
+
+  .section-header h2 {
+    margin: 0;
+  }
+
+  .section-header button {
+    font: inherit;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
+    background: light-dark(#eee, #333);
+    color: inherit;
+    cursor: pointer;
   }
 
   .grid {

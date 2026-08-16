@@ -179,13 +179,16 @@ async def _request_bridge(
 async def _bridge_request(
     config: BridgeConfig, path: str, *, method: str = "GET", json_body: Optional[dict] = None
 ) -> dict:
-    # Note for future write-route authors: on a genuine network failure, the
-    # retry path below blindly re-sends the same json_body against a
-    # rediscovered/newly-current IP. That's fine for idempotent writes (e.g.
-    # "set brightness to X") but could double-fire a non-idempotent one
-    # (e.g. "toggle") if the original request actually reached the bridge
-    # before the connection dropped. No write route exists yet, so this is
-    # speculative — revisit if/when one needs stricter at-most-once semantics.
+    # On a genuine network failure, the retry path below blindly re-sends
+    # the same json_body against a rediscovered/newly-current IP. That's
+    # fine for idempotent methods (GET, and PUT writes like "set brightness
+    # to X" or "toggle" — resending the same target state twice is
+    # harmless) but would double-fire a non-idempotent POST (e.g.
+    # create_scene) if the original request actually reached the bridge
+    # before the connection dropped, silently creating a duplicate. So POST
+    # skips rediscovery/retry entirely on a network error and just raises —
+    # the caller (a form submission) can retry manually, which is normal
+    # and doesn't risk a silent duplicate.
     if not config.bridge_ip or not config.api_key:
         raise BridgeNotConfigured()
 
@@ -204,6 +207,8 @@ async def _bridge_request(
         # bridge may have gotten a new IP. Don't forward str(exc): same
         # api_key-leak concern as above — log it server-side instead.
         logger.warning("Could not reach bridge at %s: %s", config.bridge_ip, exc)
+        if method == "POST":
+            raise BridgeUnreachable("could not reach the bridge") from exc
 
     async with _rediscovery_lock:
         # A concurrent request may have already rediscovered and persisted a
@@ -282,3 +287,37 @@ async def get_zones(config: BridgeConfig) -> list[Zone]:
         # cross-room groupings we want surfaced here.
         if raw.get("type") == "Zone"
     ]
+
+
+async def create_scene(
+    config: BridgeConfig, name: str, light_ids: list[str], group_id: Optional[str] = None
+) -> str:
+    """Create a scene from the given lights' *current* live state.
+
+    CLIP v1 has no way to set target on/bri/color values in the create body
+    — it snapshots whatever the lights are set to right now.
+
+    Confirmed against a real bridge (not documented in HUE_API.md's source
+    material): a GroupScene's membership is derived entirely from its
+    `group` — the bridge rejects a request that includes both `group` and an
+    explicit `lights` list with a "Conflicting parameter" error (type 14).
+    So `light_ids` is only sent for a standalone LightScene; for a
+    GroupScene it's ignored here (the caller may still send it to satisfy
+    the request schema, but it plays no part in what the bridge stores).
+    """
+    if group_id is not None:
+        body = {"name": name, "recycle": False, "type": "GroupScene", "group": group_id}
+    else:
+        body = {"name": name, "lights": light_ids, "recycle": False, "type": "LightScene"}
+    result = await _bridge_request(config, "scenes", method="POST", json_body=body)
+    return result[0]["success"]["id"]
+
+
+async def get_group_light_count(config: BridgeConfig, group_id: str) -> int:
+    """Light count for a single group.
+
+    Used right after creating a GroupScene to report its true membership —
+    see create_scene's docstring for why that isn't simply len(light_ids).
+    """
+    data = await _bridge_request(config, f"groups/{group_id}")
+    return len(data.get("lights", []))
