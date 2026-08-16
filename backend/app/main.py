@@ -4,7 +4,7 @@ from typing import Optional
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 from app.config import load_config
 from app.hue_client import (
@@ -86,7 +86,7 @@ class SceneCreateRequest(BaseModel):
     # 32 chars is CLIP v1's actual cap, confirmed against a real bridge
     # (a 33-char name is rejected with error type 7, "invalid value").
     name: str = Field(..., min_length=1, max_length=32)
-    light_ids: list[str] = Field(..., min_length=1)
+    light_ids: list[str] = Field(...)
     group_id: Optional[str] = None
 
     @field_validator("group_id")
@@ -97,6 +97,17 @@ class SceneCreateRequest(BaseModel):
         # rather than passing group="" through to create_scene, which the
         # bridge would reject with an opaque 502.
         return value or None
+
+    @model_validator(mode="after")
+    def _light_ids_required_without_group(self) -> "SceneCreateRequest":
+        # A GroupScene's membership comes entirely from its group — light_ids
+        # is only meaningful (and required) for a standalone LightScene, see
+        # create_scene's docstring. The per-zone "New Scene" button doesn't
+        # collect a light selection at all once a zone is fixed, so this must
+        # accept an empty list whenever group_id is set.
+        if self.group_id is None and not self.light_ids:
+            raise ValueError("light_ids must not be empty when no group_id is given")
+        return self
 
 
 @app.post("/api/scenes", status_code=201)

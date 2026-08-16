@@ -95,15 +95,20 @@
   // Buckets scenes under the zone they belong to. Scenes tied to a Room, an
   // Entertainment area, or no group at all (standalone LightScenes) don't
   // match any zone and land in "Other" — as does every scene if zones failed
-  // to load.
+  // to load. Every real zone is kept even with no scenes yet (isZone: true),
+  // so its "New Scene" button (issue #30) has somewhere to live; "Other"
+  // isn't a real zone (no per-zone create button applies to it) and is
+  // dropped when empty.
   let zoneGroups = $derived.by(() => {
-    const byId = new Map(zones.map((zone) => [zone.id, { id: zone.id, name: zone.name, scenes: [] }]))
-    const other = { id: 'other', name: 'Other', scenes: [] }
+    const byId = new Map(
+      zones.map((zone) => [zone.id, { id: zone.id, name: zone.name, scenes: [], isZone: true }])
+    )
+    const other = { id: 'other', name: 'Other', scenes: [], isZone: false }
     for (const scene of scenes) {
       const group = byId.get(scene.group_id) ?? other
       group.scenes.push(scene)
     }
-    return [...byId.values(), other].filter((group) => group.scenes.length > 0)
+    return [...byId.values(), other].filter((group) => group.isZone || group.scenes.length > 0)
   })
 
   // Note: a bridge write can succeed here (200) for a light that's
@@ -159,7 +164,9 @@
     }
   }
 
-  let showCreateForm = $state(false)
+  // Which zone's "New Scene" dialog is open, if any (issue #30 — one button
+  // per zone rather than a single global one).
+  let createFormZone = $state(null)
 
   async function createScene(name, lightIds, groupId) {
     const scene = await postJson('/api/scenes', { name, light_ids: lightIds, group_id: groupId })
@@ -217,14 +224,14 @@
     <section class="scenes-section">
       <div class="section-header">
         <h2>Scenes</h2>
-        <button onclick={() => (showCreateForm = true)}>+ New Scene</button>
       </div>
-      {#if showCreateForm}
+      {#if createFormZone}
         <CreateSceneForm
           {lights}
           {zones}
+          fixedZone={createFormZone}
           onCreate={createScene}
-          onClose={() => (showCreateForm = false)}
+          onClose={() => (createFormZone = null)}
         />
       {/if}
       {#if scenesLoading || zonesLoading}
@@ -232,8 +239,6 @@
       {:else if scenesError}
         <p class="error">{scenesError}</p>
         <button onclick={loadScenes}>Retry</button>
-      {:else if scenes.length === 0}
-        <p>No scenes found.</p>
       {:else}
         {#if zonesError}
           <p class="error">
@@ -241,14 +246,26 @@
             <button onclick={loadZones}>Retry</button>
           </p>
         {/if}
+        {#if zoneGroups.length === 0}
+          <p>No scenes found.</p>
+        {/if}
         {#each zoneGroups as group (group.id)}
           <div class="zone-group">
             <h3>{group.name}</h3>
-            <div class="grid">
-              {#each group.scenes as scene (scene.id)}
-                <SceneCard {scene} {lights} onActivate={activateScene} />
-              {/each}
-            </div>
+            {#if group.scenes.length === 0}
+              <p class="hint">No scenes in this zone yet.</p>
+            {:else}
+              <div class="grid">
+                {#each group.scenes as scene (scene.id)}
+                  <SceneCard {scene} {lights} onActivate={activateScene} />
+                {/each}
+              </div>
+            {/if}
+            {#if group.isZone}
+              <div class="zone-group-footer">
+                <button onclick={() => (createFormZone = group)}>+ New Scene</button>
+              </div>
+            {/if}
           </div>
         {/each}
       {/if}
@@ -320,7 +337,7 @@
     margin: 0;
   }
 
-  .section-header button {
+  .zone-group-footer button {
     font: inherit;
     font-size: 0.85rem;
     font-weight: 600;
@@ -333,7 +350,7 @@
     transition: filter 0.15s ease;
   }
 
-  .section-header button:hover {
+  .zone-group-footer button:hover {
     filter: brightness(0.95);
   }
 
@@ -359,6 +376,18 @@
     font-size: 0.95rem;
     font-weight: 600;
     color: light-dark(#555, #aaa);
+  }
+
+  .zone-group-footer {
+    display: flex;
+    justify-content: flex-end;
+    margin-top: 1rem;
+  }
+
+  .hint {
+    font-size: 0.85rem;
+    color: light-dark(#666, #999);
+    margin: 0;
   }
 
   .error {

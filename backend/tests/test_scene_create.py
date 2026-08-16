@@ -100,6 +100,30 @@ async def test_create_scene_empty_light_ids_is_422(client):
 
 
 @respx.mock
+async def test_create_group_scene_with_empty_light_ids(client):
+    # The per-zone "New Scene" button (issue #30) never collects a light
+    # selection — light_ids is irrelevant for a GroupScene anyway (its
+    # membership comes from the group), so an empty list must be accepted
+    # whenever group_id is set.
+    scenes_route = respx.post(f"{BRIDGE_URL}/scenes").mock(
+        return_value=Response(200, json=[{"success": {"id": "new321"}}])
+    )
+    respx.get(f"{BRIDGE_URL}/groups/3").mock(
+        return_value=Response(200, json={"name": "Living Room", "lights": ["1", "2"], "type": "Zone"})
+    )
+
+    resp = await client.post("/api/scenes", json={"name": "Movie Night", "light_ids": [], "group_id": "3"})
+
+    assert resp.status_code == 201
+    assert json.loads(scenes_route.calls.last.request.content) == {
+        "name": "Movie Night",
+        "recycle": False,
+        "type": "GroupScene",
+        "group": "3",
+    }
+
+
+@respx.mock
 async def test_create_scene_bridge_error_returns_502(client):
     respx.post(f"{BRIDGE_URL}/scenes").mock(
         return_value=Response(200, json=[{"error": {"description": "invalid/missing parameters in body"}}])
