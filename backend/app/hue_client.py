@@ -334,15 +334,23 @@ async def activate_scene(
     HUE_API.md's Scenes section). This is a PUT, so unlike create_scene's
     POST it's safe to let it go through the normal rediscovery-retry path:
     resending "activate this scene" twice is harmless.
+
+    Confirmed against a real bridge: combining {"scene": id, "bri": N} in a
+    single PUT does NOT scale the scene to N — the bridge reports "success"
+    for both fields, but the scene recall wins and each light ends up at
+    whatever brightness the scene itself stored, ignoring the requested
+    `bri`. Getting the requested brightness to actually apply requires two
+    sequential PUTs: first recall the scene, then a second PUT to scale
+    whatever's now on in the group to the requested `bri`.
     """
-    body = {"scene": scene_id}
+    await _bridge_request(config, f"groups/{group_id}/action", method="PUT", json_body={"scene": scene_id})
     if brightness_pct is not None:
-        # Unverified: whether the bridge actually applies `bri` alongside
-        # `scene` in a single call, or silently ignores/overrides one of
-        # them, hasn't been confirmed against a real bridge. If it doesn't
-        # behave as expected, this may need to become two sequential calls.
-        body["bri"] = _pct_to_bri(brightness_pct)
-    await _bridge_request(config, f"groups/{group_id}/action", method="PUT", json_body=body)
+        await _bridge_request(
+            config,
+            f"groups/{group_id}/action",
+            method="PUT",
+            json_body={"bri": _pct_to_bri(brightness_pct)},
+        )
 
 
 async def get_group_light_count(config: BridgeConfig, group_id: str) -> int:

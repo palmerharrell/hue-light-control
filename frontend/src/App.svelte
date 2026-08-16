@@ -137,12 +137,20 @@
   // set and revert for a one-shot action like activating a scene — just
   // surface a per-card error on failure. SceneCard guards against overlapping
   // double-click requests itself (same pattern as LightCard's toggle button).
-  async function activateScene(sceneId, groupId) {
+  //
+  // brightnessPct is optional: plain click-to-activate (issue #11) omits it,
+  // the per-scene brightness slider (issue #14) passes it. There's no
+  // "currently active scene brightness" tracked anywhere — moving the
+  // slider just re-activates the scene at that brightness (see
+  // HUE_API.md's "Activating a scene" section).
+  async function activateScene(sceneId, groupId, brightnessPct) {
     const scene = scenes.find((s) => s.id === sceneId)
     if (!scene) return
     scene.activateError = null
     try {
-      await postJson(`/api/scenes/${sceneId}/activate`, { group_id: groupId })
+      const body =
+        brightnessPct == null ? { group_id: groupId } : { group_id: groupId, brightness_pct: brightnessPct }
+      await postJson(`/api/scenes/${sceneId}/activate`, body)
     } catch (err) {
       scene.activateError = err.message
     }

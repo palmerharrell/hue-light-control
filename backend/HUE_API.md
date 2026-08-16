@@ -124,11 +124,22 @@ Since activation is a PUT (idempotent — resending "activate this scene"
 twice is harmless), it goes through the normal rediscovery-retry path,
 unlike scene creation's POST.
 
-`brightness_pct`, when given, is sent as `bri` in the same body alongside
-`scene`. This combination has **not** been verified against a real
-bridge — whether the bridge actually applies both, or silently drops one,
-is unconfirmed. It's accepted now for forward-compatibility with a future
-per-scene-brightness feature but isn't exercised by the frontend yet.
+`brightness_pct`, when given, requires a **second** sequential PUT — confirmed
+against a real bridge. Sending `{"scene": "<id>", "bri": <N>}` in a single
+call reports `"success"` for both fields, but the scene recall wins: every
+light in the group ends up at whatever brightness the scene itself stored,
+silently ignoring the requested `bri`. Getting the requested brightness to
+actually apply requires two sequential PUTs to the same
+`groups/<group_id>/action` endpoint:
+
+1. `{"scene": "<id>"}` — recall the scene.
+2. `{"bri": <N>}` — scale whatever's now on in the group to the requested
+   brightness.
+
+This powers the frontend's per-scene brightness slider: moving the slider
+and releasing it re-activates the scene at that brightness in one user
+action (no live-adjustment of an already-active scene, and no brightness
+state tracked for a scene between activations).
 
 ## Notes
 
