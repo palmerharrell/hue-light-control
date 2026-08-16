@@ -3,3 +3,6 @@ uvicorn[standard]
 pydantic
 pyyaml
 httpx
+pytest
+pytest-asyncio
+respx
