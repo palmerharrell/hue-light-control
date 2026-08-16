@@ -2,6 +2,7 @@
   import { onMount } from 'svelte'
   import LightCard from './LightCard.svelte'
   import SceneCard from './SceneCard.svelte'
+  import ZoneBrightnessSlider from './ZoneBrightnessSlider.svelte'
   import CreateSceneForm from './CreateSceneForm.svelte'
   import { fetchJson, postJson, putJson } from './api.js'
 
@@ -101,7 +102,10 @@
   // dropped when empty.
   let zoneGroups = $derived.by(() => {
     const byId = new Map(
-      zones.map((zone) => [zone.id, { id: zone.id, name: zone.name, scenes: [], isZone: true }])
+      zones.map((zone) => [
+        zone.id,
+        { id: zone.id, name: zone.name, lightIds: zone.light_ids, scenes: [], isZone: true },
+      ])
     )
     const other = { id: 'other', name: 'Other', scenes: [], isZone: false }
     for (const scene of scenes) {
@@ -177,24 +181,25 @@
   // set and revert for a one-shot action like activating a scene — just
   // surface a per-card error on failure. SceneCard guards against overlapping
   // double-click requests itself (same pattern as LightCard's toggle button).
-  //
-  // brightnessPct is optional: plain click-to-activate (issue #11) omits it,
-  // the per-scene brightness slider (issue #14) passes it. There's no
-  // "currently active scene brightness" tracked anywhere — moving the
-  // slider just re-activates the scene at that brightness (see
-  // HUE_API.md's "Activating a scene" section).
-  async function activateScene(sceneId, groupId, brightnessPct) {
+  async function activateScene(sceneId, groupId) {
     const scene = scenes.find((s) => s.id === sceneId)
     if (!scene) return
     scene.activateError = null
     try {
-      const body =
-        brightnessPct == null ? { group_id: groupId } : { group_id: groupId, brightness_pct: brightnessPct }
-      await postJson(`/api/scenes/${sceneId}/activate`, body)
+      await postJson(`/api/scenes/${sceneId}/activate`, { group_id: groupId })
       await refreshLights()
     } catch (err) {
       scene.activateError = err.message
     }
+  }
+
+  // Scenes in the same zone share the same bulbs, so there's no such thing
+  // as a scene-specific brightness (issue #47) — this sets the zone's
+  // brightness directly, independent of any scene. Errors are surfaced by
+  // ZoneBrightnessSlider itself (it awaits this call), not stashed here.
+  async function setZoneBrightness(zoneId, pct) {
+    await putJson(`/api/zones/${zoneId}/state`, { brightness_pct: pct })
+    await refreshLights()
   }
 </script>
 
@@ -251,13 +256,18 @@
         {/if}
         {#each zoneGroups as group (group.id)}
           <div class="zone-group">
-            <h3>{group.name}</h3>
+            <div class="zone-header">
+              <h3>{group.name}</h3>
+              {#if group.isZone}
+                <ZoneBrightnessSlider zone={group} {lights} onSetBrightness={setZoneBrightness} />
+              {/if}
+            </div>
             {#if group.scenes.length === 0}
               <p class="hint">No scenes in this zone yet.</p>
             {:else}
               <div class="grid">
                 {#each group.scenes as scene (scene.id)}
-                  <SceneCard {scene} {lights} onActivate={activateScene} />
+                  <SceneCard {scene} onActivate={activateScene} />
                 {/each}
               </div>
             {/if}
@@ -371,11 +381,19 @@
     margin-top: 1.5rem;
   }
 
-  .zone-group h3 {
-    margin: 0 0 0.75rem;
+  .zone-header {
+    display: flex;
+    align-items: center;
+    gap: 1.5rem;
+    margin-bottom: 0.75rem;
+  }
+
+  .zone-header h3 {
+    margin: 0;
     font-size: 0.95rem;
     font-weight: 600;
     color: light-dark(#555, #aaa);
+    flex-shrink: 0;
   }
 
   .zone-group-footer {

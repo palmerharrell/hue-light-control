@@ -75,7 +75,7 @@ async def test_list_zones(client):
 
     assert resp.status_code == 200
     assert resp.json() == [
-        {"id": "3", "name": "Living Room", "light_count": 2},
+        {"id": "3", "name": "Living Room", "light_count": 2, "light_ids": ["1", "2"]},
     ]
 
 
