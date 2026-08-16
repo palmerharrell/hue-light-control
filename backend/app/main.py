@@ -20,6 +20,7 @@ from app.hue_client import (
     get_lights,
     get_scenes,
     get_zones,
+    set_group_brightness,
     set_light_state,
 )
 
@@ -137,15 +138,21 @@ async def create_scene_route(body: SceneCreateRequest) -> Scene:
 
 class SceneActivateRequest(BaseModel):
     group_id: str
-    # Wired up in the frontend as the per-scene brightness slider (scale-
-    # on-activate: moving the slider re-activates the scene at that
-    # brightness). See activate_scene's docstring for the confirmed
-    # two-PUT behavior this relies on.
-    brightness_pct: Optional[int] = Field(default=None, ge=1, le=100)
 
 
 @app.post("/api/scenes/{scene_id}/activate")
 async def activate_scene_route(scene_id: str, body: SceneActivateRequest):
     config = load_config()
-    await activate_scene(config, body.group_id, scene_id, brightness_pct=body.brightness_pct)
+    await activate_scene(config, body.group_id, scene_id)
+    return {"status": "ok"}
+
+
+class ZoneStateUpdate(BaseModel):
+    brightness_pct: int = Field(..., ge=1, le=100)
+
+
+@app.put("/api/zones/{zone_id}/state")
+async def update_zone_state(zone_id: str, update: ZoneStateUpdate):
+    config = load_config()
+    await set_group_brightness(config, zone_id, update.brightness_pct)
     return {"status": "ok"}

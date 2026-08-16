@@ -112,34 +112,34 @@ whatever they're currently at.
 
 Confirms what the Groups section above already documents: there's no
 scene-specific "activate" endpoint. The app's `POST
-/api/scenes/<id>/activate` route (body: `{"group_id": "<id>", "brightness_pct":
-<1-100, optional>}`) turns around and issues `PUT
-/api/<username>/groups/<group_id>/action` with `{"scene": "<id>"}` — the
-same call the Groups/Scenes sections describe. `group_id` must be supplied
-by the caller (the frontend gets it from the scene's own `group_id`, which
-is null for a standalone `LightScene` — those can't be activated this way
-and the frontend disables them).
+/api/scenes/<id>/activate` route (body: `{"group_id": "<id>"}`) turns
+around and issues `PUT /api/<username>/groups/<group_id>/action` with
+`{"scene": "<id>"}` — the same call the Groups/Scenes sections describe.
+`group_id` must be supplied by the caller (the frontend gets it from the
+scene's own `group_id`, which is null for a standalone `LightScene` —
+those can't be activated this way and the frontend disables them).
 
 Since activation is a PUT (idempotent — resending "activate this scene"
 twice is harmless), it goes through the normal rediscovery-retry path,
 unlike scene creation's POST.
 
-`brightness_pct`, when given, requires a **second** sequential PUT — confirmed
-against a real bridge. Sending `{"scene": "<id>", "bri": <N>}` in a single
-call reports `"success"` for both fields, but the scene recall wins: every
-light in the group ends up at whatever brightness the scene itself stored,
-silently ignoring the requested `bri`. Getting the requested brightness to
-actually apply requires two sequential PUTs to the same
-`groups/<group_id>/action` endpoint:
+Confirmed against a real bridge: sending `{"scene": "<id>", "bri": <N>}`
+in a single call reports `"success"` for both fields, but the scene
+recall wins — every light in the group ends up at whatever brightness the
+scene itself stored, silently ignoring the requested `bri`. So scene
+activation never attempts to set a brightness at all.
 
-1. `{"scene": "<id>"}` — recall the scene.
-2. `{"bri": <N>}` — scale whatever's now on in the group to the requested
-   brightness.
+### Setting zone brightness (issue #47)
 
-This powers the frontend's per-scene brightness slider: moving the slider
-and releasing it re-activates the scene at that brightness in one user
-action (no live-adjustment of an already-active scene, and no brightness
-state tracked for a scene between activations).
+Scenes in a given zone all recall the same bulbs, so there's no such
+thing as a scene-specific brightness — the app doesn't try to offer one.
+Instead `PUT /api/zones/<id>/state` (body: `{"brightness_pct": <1-100>}`)
+issues a single standalone `PUT /api/<username>/groups/<group_id>/action`
+with `{"bri": <N>}` — no `scene` field, so there's no recall to compete
+with it and no need for the two-PUT dance a combined `{"scene", "bri"}`
+call would require (see above). This is what powers the frontend's
+per-zone brightness slider, shown once per zone rather than once per
+scene.
 
 ## Full CLIP v1 resource catalog (research: issue #29)
 
