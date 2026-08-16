@@ -1,5 +1,7 @@
 <script>
-  let { value, min = 0, max = 100, disabled = false, label, onChange } = $props()
+  // The bridge (and backend validation) rejects brightness_pct below 1 —
+  // 0 isn't a meaningful "on" brightness, off is the separate toggle.
+  let { value, min = 1, max = 100, disabled = false, showValue = true, label, onChange } = $props()
   let localValue = $state(value)
   $effect(() => { localValue = value })
 </script>
@@ -13,7 +15,9 @@
     aria-label={label}
     onchange={() => onChange(Number(localValue))}
   />
-  <span class="brightness-label">{localValue}%</span>
+  {#if showValue}
+    <span class="brightness-label">{localValue}%</span>
+  {/if}
 </div>
 
 <style>

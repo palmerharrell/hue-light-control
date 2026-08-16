@@ -15,7 +15,7 @@ from app.hue_client import (
     Zone,
     activate_scene,
     create_scene,
-    get_group_light_count,
+    get_group_light_ids,
     get_lights,
     get_scenes,
     get_zones,
@@ -104,18 +104,20 @@ async def create_scene_route(body: SceneCreateRequest) -> Scene:
     config = load_config()
     if body.group_id is not None:
         # A GroupScene's membership comes from the group, not light_ids the
-        # caller sent (see create_scene) — fetch the true count rather than
-        # synthesizing a possibly-wrong one from the request body. This
+        # caller sent (see create_scene) — fetch the true membership rather
+        # than synthesizing a possibly-wrong one from the request body. This
         # doesn't depend on the scene-creation result, so run both calls
         # concurrently instead of paying for two round-trips in series.
-        scene_id, light_count = await asyncio.gather(
+        scene_id, light_ids = await asyncio.gather(
             create_scene(config, body.name, body.light_ids, body.group_id),
-            get_group_light_count(config, body.group_id),
+            get_group_light_ids(config, body.group_id),
         )
     else:
         scene_id = await create_scene(config, body.name, body.light_ids, body.group_id)
-        light_count = len(body.light_ids)
-    return Scene(id=scene_id, name=body.name, light_count=light_count, group_id=body.group_id)
+        light_ids = body.light_ids
+    return Scene(
+        id=scene_id, name=body.name, light_count=len(light_ids), light_ids=light_ids, group_id=body.group_id
+    )
 
 
 class SceneActivateRequest(BaseModel):

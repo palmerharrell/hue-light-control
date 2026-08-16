@@ -1,19 +1,38 @@
 <script>
   import BrightnessSlider from './BrightnessSlider.svelte'
 
-  let { scene, onActivate } = $props()
+  let { scene, lights, onActivate } = $props()
 
   // Standalone LightScenes (no group_id) can't be activated via the
   // group-action endpoint (see HUE_API.md's Scenes section) — render them
   // as non-interactive instead of wiring up a click handler.
   let activatable = $derived(scene.group_id != null)
 
-  // Local, ephemeral UI state — there's no concept of "the currently
-  // active scene's brightness" tracked anywhere (scenes aren't stateful
-  // like that in this app). Resets to 100 on reload; that's expected.
-  // Moving the slider re-activates the scene at that brightness rather
-  // than live-adjusting an already-active scene.
-  let sceneBrightness = $state(100)
+  // The bridge has no concept of "is this scene active" or "what's this
+  // scene's current brightness" (confirmed directly against a real bridge —
+  // group.action never records which scene, if any, was last recalled, and
+  // a scene's own stored lightstates reflect creation time, not now). So
+  // rather than asking the bridge, derive both from the same live
+  // /api/lights data the Bulbs section already shows, matched against this
+  // scene's light_ids — that's always accurate and free (no extra
+  // request), and updates automatically whenever `lights` does (a bulb
+  // toggle, or App's refreshLights() after any scene activation).
+  let sceneLights = $derived(lights.filter((light) => scene.light_ids.includes(light.id)))
+  let onLights = $derived(sceneLights.filter((light) => light.on))
+
+  // Only "off" once lights have actually loaded (sceneLights is briefly
+  // empty before that, at which point this stays false, leaving the slider
+  // enabled and at the fallback below rather than flashing "off").
+  let off = $derived(sceneLights.length > 0 && onLights.length === 0)
+
+  // Average brightness across just the on lights, clamped to 1 (the bridge
+  // and BrightnessSlider's min never accept 0). Falls back to 100 while
+  // lights haven't loaded yet, or if the scene isn't on.
+  let liveBrightnessPct = $derived(
+    onLights.length > 0
+      ? Math.max(Math.round(onLights.reduce((sum, light) => sum + light.brightness_pct, 0) / onLights.length), 1)
+      : 100
+  )
 
   // Serializes both activation paths (plain click and the brightness
   // slider) for this card: while a request is in flight both controls are
@@ -30,11 +49,6 @@
       pending = false
     }
   }
-
-  function handleBrightnessChange(pct) {
-    sceneBrightness = pct
-    activate(pct)
-  }
 </script>
 
 <div class="card" class:inactive={!activatable}>
@@ -46,17 +60,17 @@
     onclick={() => activate()}
   >
     <span class="name">{scene.name}</span>
-    <span class="badge">{scene.light_count} {scene.light_count === 1 ? 'light' : 'lights'}</span>
     {#if scene.activateError}
       <span class="badge error-badge">{scene.activateError}</span>
     {/if}
   </button>
 
   <BrightnessSlider
-    value={sceneBrightness}
+    value={liveBrightnessPct}
     label="{scene.name} brightness"
-    disabled={!activatable || pending}
-    onChange={handleBrightnessChange}
+    disabled={!activatable || pending || off}
+    showValue={!off}
+    onChange={activate}
   />
 </div>
 
@@ -70,6 +84,12 @@
     gap: 0.6rem;
     background: light-dark(#fff, #1e1e1e);
     width: 100%;
+    box-shadow: 0 1px 2px light-dark(rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.2));
+    transition: box-shadow 0.15s ease;
+  }
+
+  .card:not(.inactive):hover {
+    box-shadow: 0 2px 8px light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.3));
   }
 
   .card.inactive {

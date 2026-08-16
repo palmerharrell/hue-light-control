@@ -119,10 +119,19 @@
     background: light-dark(#fff, #1e1e1e);
     color: inherit;
     width: min(24rem, 90vw);
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
   }
 
   dialog::backdrop {
     background: rgba(0, 0, 0, 0.4);
+  }
+
+  button.primary:hover:not(:disabled) {
+    filter: brightness(1.08);
+  }
+
+  .actions button:not(.primary):hover {
+    filter: brightness(0.95);
   }
 
   h2 {
