@@ -1,7 +1,7 @@
 import asyncio
 from typing import Optional
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator
@@ -18,6 +18,7 @@ from app.hue_client import (
     get_lights,
     get_scenes,
     get_zones,
+    set_light_state,
 )
 
 app = FastAPI(title="Hue Light Control API")
@@ -50,6 +51,22 @@ def health():
 async def list_lights() -> list[Light]:
     config = load_config()
     return await get_lights(config)
+
+
+class LightStateUpdate(BaseModel):
+    on: Optional[bool] = None
+    # 0 isn't a settable target (that's what on: false is for) — matches
+    # _pct_to_bri's floor of 1.
+    brightness_pct: Optional[int] = Field(default=None, ge=1, le=100)
+
+
+@app.put("/api/lights/{light_id}/state")
+async def update_light_state(light_id: str, update: LightStateUpdate):
+    if update.on is None and update.brightness_pct is None:
+        raise HTTPException(status_code=400, detail="must set on and/or brightness_pct")
+    config = load_config()
+    await set_light_state(config, light_id, on=update.on, brightness_pct=update.brightness_pct)
+    return {"status": "ok"}
 
 
 @app.get("/api/scenes")

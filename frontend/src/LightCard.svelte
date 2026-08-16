@@ -1,5 +1,21 @@
 <script>
-  let { light } = $props()
+  let { light, onToggle } = $props()
+
+  // Serializes toggle clicks for this card: while a PUT is in flight the
+  // button is disabled, so a fast double-click can't fire a second request
+  // that resolves out of order with the first and leaves the optimistic
+  // on/off state permanently diverged from the bridge.
+  let pending = $state(false)
+
+  async function handleToggle() {
+    if (pending) return
+    pending = true
+    try {
+      await onToggle(light.id, !light.on)
+    } finally {
+      pending = false
+    }
+  }
 </script>
 
 <div class="card" class:unreachable={!light.reachable}>
@@ -12,9 +28,21 @@
   </div>
 
   <div class="status">
-    <span class="badge" class:on={light.on}>{light.on ? 'On' : 'Off'}</span>
+    <button
+      type="button"
+      class="badge toggle"
+      class:on={light.on}
+      aria-pressed={light.on}
+      disabled={pending}
+      onclick={handleToggle}
+    >
+      {light.on ? 'On' : 'Off'}
+    </button>
     {#if !light.reachable}
       <span class="badge unreachable-badge">Unreachable</span>
+    {/if}
+    {#if light.toggleError}
+      <span class="badge error-badge">{light.toggleError}</span>
     {/if}
   </div>
 
@@ -79,7 +107,29 @@
     color: light-dark(#1c7a2e, #7fe396);
   }
 
-  .unreachable-badge {
+  .toggle {
+    font: inherit;
+    font-size: 0.75rem;
+    border: none;
+    cursor: pointer;
+  }
+
+  .toggle:hover {
+    filter: brightness(0.95);
+  }
+
+  .toggle:focus-visible {
+    outline: 2px solid light-dark(#1c7a2e, #7fe396);
+    outline-offset: 2px;
+  }
+
+  .toggle:disabled {
+    opacity: 0.6;
+    cursor: default;
+  }
+
+  .unreachable-badge,
+  .error-badge {
     background: light-dark(#fbe3e0, #3d211f);
     color: light-dark(#a3392c, #f0958a);
   }
