@@ -45,9 +45,15 @@
   }
 
   // Dragging to 0 is an off command, not brightness_pct: 0 (the bridge
-  // rejects that) — everything above 0 sets brightness and implies on.
+  // rejects that). Dragging up from a fully-off zone is the explicit
+  // "turn back on" gesture and applies to every light (turnOn: true) —
+  // otherwise (some lights already on) it's a plain adjustment that must
+  // only touch the already-on lights, per onSetBrightness's contract.
   function setBrightness(pct) {
-    runUpdate(() => (pct === 0 ? onSetZoneOn(zone.id, false) : onSetBrightness(zone.id, pct)))
+    runUpdate(() => {
+      if (pct === 0) return onSetZoneOn(zone.id, false)
+      return onSetBrightness(zone.id, pct, { turnOn: off })
+    })
   }
 
   function turnOff() {
