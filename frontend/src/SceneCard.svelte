@@ -18,6 +18,13 @@
     pending = true
     try {
       await onActivate(scene.id, scene.group_id)
+      // A v1 scene recall statically re-applies the scene's stored light
+      // states (see HUE_API.md), which halts any v2 dynamic animation
+      // already running on those bulbs — so activating the card while
+      // playing must also drop the client-side playing flag, or the UI
+      // keeps showing a pause icon/speed slider for an animation that's
+      // no longer actually running.
+      playing = false
     } finally {
       pending = false
     }
@@ -45,6 +52,14 @@
   let playError = $state(null)
   let speed = $state(0.5)
 
+  // Stops both click and keydown from reaching the outer card's
+  // activate handler — needed on both event types since a keyboard
+  // Enter/Space on this button dispatches a keydown that would otherwise
+  // bubble to the card's onkeydown and also recall the whole scene.
+  function stopBubble(event) {
+    event.stopPropagation()
+  }
+
   async function togglePlay(event) {
     event.stopPropagation()
     if (playPending) return
@@ -65,13 +80,20 @@
     }
   }
 
+  // Same "only the latest request wins" guard App.svelte's
+  // setLightBrightness uses for the identical race: rapid successive
+  // speed changes can leave overlapping PUTs in flight, and an older one
+  // failing after a newer one already succeeded shouldn't stomp playError.
+  let latestSpeedRequest = 0
+
   async function changeSpeed(value) {
     const pct = Number(value)
     speed = pct / 100
+    const token = ++latestSpeedRequest
     try {
       await onSpeedChange(scene.id, speed)
     } catch (err) {
-      playError = err.message
+      if (latestSpeedRequest === token) playError = err.message
     }
   }
 </script>
@@ -96,6 +118,7 @@
         disabled={playPending}
         title={playing ? 'Stop dynamic effect' : 'Play dynamic effect'}
         onclick={togglePlay}
+        onkeydown={stopBubble}
       >
         {playing ? '⏸' : '▶'}
       </button>
@@ -105,8 +128,8 @@
         class="speed-row"
         role="group"
         aria-label="{scene.name} speed control"
-        onclick={(e) => e.stopPropagation()}
-        onkeydown={(e) => e.stopPropagation()}
+        onclick={stopBubble}
+        onkeydown={stopBubble}
       >
         <BrightnessSlider
           value={Math.round(speed * 100)}
