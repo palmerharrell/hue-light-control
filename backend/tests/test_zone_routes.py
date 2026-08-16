@@ -19,10 +19,34 @@ async def test_update_zone_state(client):
     assert json.loads(action_route.calls.last.request.content) == {"bri": 127}
 
 
-async def test_update_zone_state_missing_brightness_pct_is_422(client):
+async def test_update_zone_state_neither_field_is_400(client):
     resp = await client.put("/api/zones/z1/state", json={})
 
-    assert resp.status_code == 422
+    assert resp.status_code == 400
+
+
+@respx.mock
+async def test_update_zone_state_off(client):
+    action_route = respx.put(f"{BRIDGE_URL}/groups/z1/action").mock(
+        return_value=Response(200, json=[{"success": {"/groups/z1/action/on": False}}])
+    )
+
+    resp = await client.put("/api/zones/z1/state", json={"on": False})
+
+    assert resp.status_code == 200
+    assert json.loads(action_route.calls.last.request.content) == {"on": False}
+
+
+@respx.mock
+async def test_update_zone_state_on_and_brightness_pct_combine(client):
+    action_route = respx.put(f"{BRIDGE_URL}/groups/z1/action").mock(
+        return_value=Response(200, json=[{"success": {"/groups/z1/action/bri": 127}}])
+    )
+
+    resp = await client.put("/api/zones/z1/state", json={"on": True, "brightness_pct": 50})
+
+    assert resp.status_code == 200
+    assert json.loads(action_route.calls.last.request.content) == {"on": True, "bri": 127}
 
 
 async def test_update_zone_state_out_of_range_brightness_pct_is_422(client):

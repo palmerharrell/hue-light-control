@@ -1,6 +1,8 @@
 <script>
-  // The bridge (and backend validation) rejects brightness_pct below 1 —
-  // 0 isn't a meaningful "on" brightness, off is the separate toggle.
+  // The bridge (and backend validation) rejects brightness_pct below 1 — 0
+  // isn't a meaningful "on" brightness. Callers that want a 0 rung (e.g. the
+  // zone slider, where 0 means "turn off") pass min={0} and must translate a
+  // 0 onChange into an off command themselves rather than brightness_pct: 0.
   let { value, min = 1, max = 100, disabled = false, showValue = true, label, onChange } = $props()
   let localValue = $state(value)
   $effect(() => { localValue = value })

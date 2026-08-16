@@ -352,8 +352,10 @@ async def activate_scene(config: BridgeConfig, group_id: str, scene_id: str) -> 
     await _bridge_request(config, f"groups/{group_id}/action", method="PUT", json_body={"scene": scene_id})
 
 
-async def set_group_brightness(config: BridgeConfig, group_id: str, brightness_pct: int) -> None:
-    """Set brightness for every light in a group/zone at once, independent of any scene.
+async def set_group_state(
+    config: BridgeConfig, group_id: str, *, on: Optional[bool] = None, brightness_pct: Optional[int] = None
+) -> None:
+    """Set on/off and/or brightness for every light in a group/zone at once, independent of any scene.
 
     Scenes in the same zone/group share the same bulbs, so there's no such
     thing as a scene-specific brightness — this is the single source of
@@ -362,10 +364,14 @@ async def set_group_brightness(config: BridgeConfig, group_id: str, brightness_p
     {"scene": id, "bri": N} in one PUT lets the scene recall win and ignores
     `bri`, but a standalone {"bri": N} PUT to the group's action endpoint —
     with no scene involved — scales every light in the group as expected.
+    Unlike `scene`, `on` and `bri` combine fine in a single PUT.
     """
-    await _bridge_request(
-        config, f"groups/{group_id}/action", method="PUT", json_body={"bri": _pct_to_bri(brightness_pct)}
-    )
+    body = {}
+    if on is not None:
+        body["on"] = on
+    if brightness_pct is not None:
+        body["bri"] = _pct_to_bri(brightness_pct)
+    await _bridge_request(config, f"groups/{group_id}/action", method="PUT", json_body=body)
 
 
 async def get_group_light_ids(config: BridgeConfig, group_id: str) -> list[str]:

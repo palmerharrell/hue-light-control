@@ -197,8 +197,16 @@
   // as a scene-specific brightness (issue #47) — this sets the zone's
   // brightness directly, independent of any scene. Errors are surfaced by
   // ZoneBrightnessSlider itself (it awaits this call), not stashed here.
+  // Dragging brightness up implies the zone is on, same as setLightBrightness
+  // does per-light — otherwise a light the Off button (or an earlier 0 drag)
+  // turned off would take the new bri without actually turning back on.
   async function setZoneBrightness(zoneId, pct) {
-    await putJson(`/api/zones/${zoneId}/state`, { brightness_pct: pct })
+    await putJson(`/api/zones/${zoneId}/state`, { brightness_pct: pct, on: true })
+    await refreshLights()
+  }
+
+  async function setZoneOn(zoneId, on) {
+    await putJson(`/api/zones/${zoneId}/state`, { on })
     await refreshLights()
   }
 </script>
@@ -259,7 +267,7 @@
             <div class="zone-header">
               <h3>{group.name}</h3>
               {#if group.isZone}
-                <ZoneBrightnessSlider zone={group} {lights} onSetBrightness={setZoneBrightness} />
+                <ZoneBrightnessSlider zone={group} {lights} onSetBrightness={setZoneBrightness} onSetZoneOn={setZoneOn} />
               {/if}
             </div>
             {#if group.scenes.length === 0}
