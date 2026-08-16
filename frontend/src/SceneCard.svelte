@@ -41,10 +41,8 @@
   .card {
     border: 1px solid light-dark(#d8d8d8, #3a3a3a);
     border-radius: 0.75rem;
-    padding: 1rem;
     display: flex;
     flex-direction: column;
-    gap: 0.6rem;
     background: light-dark(#fff, #1e1e1e);
     width: 100%;
     box-shadow: 0 1px 2px light-dark(rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.2));
@@ -63,10 +61,14 @@
     display: flex;
     flex-direction: column;
     align-items: flex-start;
+    justify-content: center;
     gap: 0.6rem;
     width: 100%;
+    height: 100%;
+    flex: 1;
     border: none;
-    padding: 0;
+    border-radius: inherit;
+    padding: 1rem;
     margin: 0;
     background: none;
     font: inherit;
@@ -81,7 +83,7 @@
 
   .activate:focus-visible {
     outline: 2px solid light-dark(#1c7a2e, #7fe396);
-    outline-offset: 2px;
+    outline-offset: -2px;
   }
 
   .activate:disabled {
