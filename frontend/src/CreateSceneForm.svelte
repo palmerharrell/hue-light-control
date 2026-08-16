@@ -1,12 +1,16 @@
 <script>
   import { onMount } from 'svelte'
 
-  let { lights, zones, onCreate, onClose } = $props()
+  // fixedZone, when set, pins the scene to that zone (issue #30's per-zone
+  // "New Scene" button) — the zone dropdown and light checkboxes below are
+  // irrelevant in that case, since a zone scene always captures the zone's
+  // actual membership (see the hint text and HUE_API.md).
+  let { lights, zones, fixedZone = null, onCreate, onClose } = $props()
 
   let dialog = $state(null)
   let name = $state('')
   let selectedLightIds = $state([])
-  let selectedZoneId = $state('')
+  let selectedZoneId = $state(fixedZone?.id ?? '')
   let submitting = $state(false)
   let error = $state(null)
 
@@ -58,44 +62,50 @@
 
 <dialog bind:this={dialog} onclose={onClose} onclick={handleBackdropClick}>
   <form onsubmit={handleSubmit}>
-    <h2>New Scene</h2>
+    <h2>{fixedZone ? `New Scene — ${fixedZone.name}` : 'New Scene'}</h2>
 
     <label class="field">
       <span>Name</span>
       <input type="text" bind:value={name} maxlength="32" placeholder="e.g. Movie Night" />
     </label>
 
-    <fieldset class="field">
-      <legend>Lights</legend>
-      {#if lights.length === 0}
-        <p class="hint">No lights available.</p>
-      {:else}
-        <div class="light-list">
-          {#each lights as light (light.id)}
-            <label class="light-option">
-              <input type="checkbox" bind:group={selectedLightIds} value={light.id} />
-              {light.name}
-            </label>
-          {/each}
-        </div>
-      {/if}
-    </fieldset>
-
-    <label class="field">
-      <span>Zone</span>
-      <select bind:value={selectedZoneId}>
-        <option value="">No zone</option>
-        {#each zones as zone (zone.id)}
-          <option value={zone.id}>{zone.name}</option>
-        {/each}
-      </select>
-    </label>
-
-    {#if selectedZoneId}
+    {#if fixedZone}
       <p class="hint">
-        This scene will capture every light currently in this zone — the light selection above
-        is ignored once a zone is set.
+        This scene will capture every light currently in <strong>{fixedZone.name}</strong>.
       </p>
+    {:else}
+      <fieldset class="field">
+        <legend>Lights</legend>
+        {#if lights.length === 0}
+          <p class="hint">No lights available.</p>
+        {:else}
+          <div class="light-list">
+            {#each lights as light (light.id)}
+              <label class="light-option">
+                <input type="checkbox" bind:group={selectedLightIds} value={light.id} />
+                {light.name}
+              </label>
+            {/each}
+          </div>
+        {/if}
+      </fieldset>
+
+      <label class="field">
+        <span>Zone</span>
+        <select bind:value={selectedZoneId}>
+          <option value="">No zone</option>
+          {#each zones as zone (zone.id)}
+            <option value={zone.id}>{zone.name}</option>
+          {/each}
+        </select>
+      </label>
+
+      {#if selectedZoneId}
+        <p class="hint">
+          This scene will capture every light currently in this zone — the light selection above
+          is ignored once a zone is set.
+        </p>
+      {/if}
     {/if}
 
     {#if error}
