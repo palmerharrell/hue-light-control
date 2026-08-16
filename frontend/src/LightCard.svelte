@@ -1,5 +1,5 @@
 <script>
-  let { light } = $props()
+  let { light, onToggle } = $props()
 </script>
 
 <div class="card" class:unreachable={!light.reachable}>
@@ -12,7 +12,14 @@
   </div>
 
   <div class="status">
-    <span class="badge" class:on={light.on}>{light.on ? 'On' : 'Off'}</span>
+    <button
+      type="button"
+      class="badge toggle"
+      class:on={light.on}
+      onclick={() => onToggle(light.id, !light.on)}
+    >
+      {light.on ? 'On' : 'Off'}
+    </button>
     {#if !light.reachable}
       <span class="badge unreachable-badge">Unreachable</span>
     {/if}
@@ -77,6 +84,22 @@
   .badge.on {
     background: light-dark(#dcf5df, #1f3d24);
     color: light-dark(#1c7a2e, #7fe396);
+  }
+
+  .toggle {
+    font: inherit;
+    font-size: 0.75rem;
+    border: none;
+    cursor: pointer;
+  }
+
+  .toggle:hover {
+    filter: brightness(0.95);
+  }
+
+  .toggle:focus-visible {
+    outline: 2px solid light-dark(#1c7a2e, #7fe396);
+    outline-offset: 2px;
   }
 
   .unreachable-badge {

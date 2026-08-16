@@ -313,6 +313,17 @@ async def create_scene(
     return result[0]["success"]["id"]
 
 
+async def set_light_state(
+    config: BridgeConfig, light_id: str, *, on: Optional[bool] = None, brightness_pct: Optional[int] = None
+) -> None:
+    body = {}
+    if on is not None:
+        body["on"] = on
+    if brightness_pct is not None:
+        body["bri"] = _pct_to_bri(brightness_pct)
+    await _bridge_request(config, f"lights/{light_id}/state", method="PUT", json_body=body)
+
+
 async def get_group_light_count(config: BridgeConfig, group_id: str) -> int:
     """Light count for a single group.
 

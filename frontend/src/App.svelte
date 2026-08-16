@@ -3,7 +3,7 @@
   import LightCard from './LightCard.svelte'
   import SceneCard from './SceneCard.svelte'
   import CreateSceneForm from './CreateSceneForm.svelte'
-  import { fetchJson, postJson } from './api.js'
+  import { fetchJson, postJson, putJson } from './api.js'
 
   let lights = $state([])
   let lightsLoading = $state(true)
@@ -73,6 +73,18 @@
     return [...byId.values(), other].filter((group) => group.scenes.length > 0)
   })
 
+  async function toggleLight(lightId, on) {
+    const light = lights.find((l) => l.id === lightId)
+    if (!light) return
+    const prev = light.on
+    light.on = on
+    try {
+      await putJson(`/api/lights/${lightId}/state`, { on })
+    } catch {
+      light.on = prev
+    }
+  }
+
   let showCreateForm = $state(false)
 
   async function createScene(name, lightIds, groupId) {
@@ -96,7 +108,7 @@
     {:else}
       <div class="grid">
         {#each lights as light (light.id)}
-          <LightCard {light} />
+          <LightCard {light} onToggle={toggleLight} />
         {/each}
       </div>
     {/if}
