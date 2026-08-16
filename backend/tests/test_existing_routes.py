@@ -50,8 +50,12 @@ async def test_list_scenes(client):
     resp = await client.get("/api/scenes")
 
     assert resp.status_code == 200
+    # Deliberately no brightness/on-off here — get_scenes doesn't fetch
+    # per-scene detail at all. The frontend derives live brightness/on-off
+    # by matching light_ids against /api/lights instead, since the bridge
+    # has no concept of "is this scene active" (see hue_client.get_scenes).
     assert resp.json() == [
-        {"id": "s1", "name": "Relax", "light_count": 2, "group_id": "3"},
+        {"id": "s1", "name": "Relax", "light_count": 2, "light_ids": ["1", "2"], "group_id": "3"},
     ]
 
 

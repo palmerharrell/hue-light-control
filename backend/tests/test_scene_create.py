@@ -35,6 +35,7 @@ async def test_create_group_scene(client):
         # Reflects the group's actual membership (3 lights), not the 2
         # light_ids that were submitted — those don't apply to a GroupScene.
         "light_count": 3,
+        "light_ids": ["1", "2", "5"],
         "group_id": "3",
     }
 
@@ -58,6 +59,7 @@ async def test_create_light_scene_without_group(client):
         "id": "new456",
         "name": "Reading",
         "light_count": 2,
+        "light_ids": ["1", "2"],
         "group_id": None,
     }
 

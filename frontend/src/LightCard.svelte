@@ -18,41 +18,61 @@
       pending = false
     }
   }
+
+  // The swatch and brightness slider are their own interactive/decorative
+  // regions, not part of the toggle target — a click that lands in either
+  // (checked via closest, since the slider's range input is what's actually
+  // clicked) shouldn't also toggle the light.
+  function handleCardClick(event) {
+    if (event.target.closest('.swatch, .slider-wrap')) return
+    handleToggle()
+  }
+
+  function handleKeydown(event) {
+    if (event.key === 'Enter' || event.key === ' ') {
+      event.preventDefault()
+      handleToggle()
+    }
+  }
 </script>
 
-<div class="card" class:unreachable={!light.reachable}>
+<div
+  class="card"
+  class:unreachable={!light.reachable}
+  role="button"
+  tabindex="0"
+  aria-pressed={light.on}
+  aria-disabled={pending}
+  onclick={handleCardClick}
+  onkeydown={handleKeydown}
+>
   <div class="header">
     <span
       class="swatch"
       style:background-color={light.on ? (light.color ?? '#ffe9b3') : undefined}
+      style:box-shadow={light.on ? `0 0 0.5rem ${light.color ?? '#ffe9b3'}` : undefined}
     ></span>
     <span class="name">{light.name}</span>
   </div>
 
-  <div class="status">
-    <button
-      type="button"
-      class="badge toggle"
-      class:on={light.on}
-      aria-pressed={light.on}
-      disabled={pending}
-      onclick={handleToggle}
-    >
-      {light.on ? 'On' : 'Off'}
-    </button>
-    {#if !light.reachable}
-      <span class="badge unreachable-badge">Unreachable</span>
-    {/if}
-    {#if light.toggleError}
-      <span class="badge error-badge">{light.toggleError}</span>
-    {/if}
-  </div>
+  {#if !light.reachable || light.toggleError}
+    <div class="status">
+      {#if !light.reachable}
+        <span class="badge unreachable-badge">Unreachable</span>
+      {/if}
+      {#if light.toggleError}
+        <span class="badge error-badge">{light.toggleError}</span>
+      {/if}
+    </div>
+  {/if}
 
-  <BrightnessSlider
-    value={light.brightness_pct}
-    label="{light.name} brightness"
-    onChange={(pct) => onBrightnessChange(light.id, pct)}
-  />
+  <div class="slider-wrap">
+    <BrightnessSlider
+      value={light.brightness_pct}
+      label="{light.name} brightness"
+      onChange={(pct) => onBrightnessChange(light.id, pct)}
+    />
+  </div>
 </div>
 
 <style>
@@ -64,6 +84,22 @@
     flex-direction: column;
     gap: 0.6rem;
     background: light-dark(#fff, #1e1e1e);
+    box-shadow: 0 1px 2px light-dark(rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.2));
+    transition: box-shadow 0.15s ease;
+    cursor: pointer;
+  }
+
+  .card:hover {
+    box-shadow: 0 2px 8px light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.3));
+  }
+
+  .card:focus-visible {
+    outline: 2px solid light-dark(#1c7a2e, #7fe396);
+    outline-offset: 2px;
+  }
+
+  .card[aria-disabled='true'] {
+    cursor: default;
   }
 
   .card.unreachable {
@@ -83,6 +119,12 @@
     border: 1px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.25));
     background: light-dark(#e2e2e2, #2a2a2a);
     flex-shrink: 0;
+    cursor: default;
+    transition: box-shadow 0.2s ease, background-color 0.2s ease;
+  }
+
+  .slider-wrap {
+    cursor: default;
   }
 
   .name {
@@ -101,32 +143,7 @@
     background: light-dark(#eee, #333);
     color: light-dark(#555, #ccc);
     width: fit-content;
-  }
-
-  .badge.on {
-    background: light-dark(#dcf5df, #1f3d24);
-    color: light-dark(#1c7a2e, #7fe396);
-  }
-
-  .toggle {
-    font: inherit;
-    font-size: 0.75rem;
-    border: none;
-    cursor: pointer;
-  }
-
-  .toggle:hover {
-    filter: brightness(0.95);
-  }
-
-  .toggle:focus-visible {
-    outline: 2px solid light-dark(#1c7a2e, #7fe396);
-    outline-offset: 2px;
-  }
-
-  .toggle:disabled {
-    opacity: 0.6;
-    cursor: default;
+    transition: background-color 0.15s ease, color 0.15s ease;
   }
 
   .unreachable-badge,

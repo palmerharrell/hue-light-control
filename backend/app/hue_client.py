@@ -39,6 +39,7 @@ class Scene(BaseModel):
     id: str
     name: str
     light_count: int
+    light_ids: list[str] = []
     group_id: Optional[str] = None
 
 
@@ -248,10 +249,12 @@ async def get_lights(config: BridgeConfig) -> list[Light]:
 
 
 def _to_scene(scene_id: str, raw: dict) -> Scene:
+    light_ids = raw.get("lights", [])
     return Scene(
         id=scene_id,
         name=raw.get("name", f"Scene {scene_id}"),
-        light_count=len(raw.get("lights", [])),
+        light_count=len(light_ids),
+        light_ids=light_ids,
         # Only GroupScenes have this; ties the scene to the group (room/zone)
         # it was created for. Absent for standalone LightScenes.
         group_id=raw.get("group"),
@@ -259,6 +262,16 @@ def _to_scene(scene_id: str, raw: dict) -> Scene:
 
 
 async def get_scenes(config: BridgeConfig) -> list[Scene]:
+    # A scene's *stored* brightness (from GET /scenes/<id>'s lightstates)
+    # reflects whatever it looked like when created/last saved — not
+    # whether it's currently applied or what its lights are actually at
+    # right now. There's no bridge concept of "is this scene active" at
+    # all (confirmed: group.action never records which scene, if any, was
+    # last recalled). So this deliberately doesn't fetch per-scene detail —
+    # the frontend instead derives each scene's live on/off + brightness by
+    # matching light_ids against the already-loaded /api/lights, which is
+    # both actually correct (reflects reality, not a stale snapshot) and
+    # cheaper (no per-scene bridge round-trip at all).
     data = await _bridge_request(config, "scenes")
     return [
         _to_scene(scene_id, raw)
@@ -353,11 +366,11 @@ async def activate_scene(
         )
 
 
-async def get_group_light_count(config: BridgeConfig, group_id: str) -> int:
-    """Light count for a single group.
+async def get_group_light_ids(config: BridgeConfig, group_id: str) -> list[str]:
+    """Light ids for a single group.
 
     Used right after creating a GroupScene to report its true membership —
-    see create_scene's docstring for why that isn't simply len(light_ids).
+    see create_scene's docstring for why that isn't simply light_ids.
     """
     data = await _bridge_request(config, f"groups/{group_id}")
-    return len(data.get("lights", []))
+    return data.get("lights", [])

@@ -29,6 +29,23 @@
     }
   }
 
+  // Same fetch as loadLights, but silent (no loading-state flicker in the
+  // Bulbs section) — used after a scene activation, since that changes
+  // multiple lights at once on the bridge and the local `lights` array
+  // otherwise has no way to know. Scene cards derive their on/off and
+  // brightness display from this same `lights` array (see SceneCard), so
+  // this is also what keeps a scene's shown brightness from going stale
+  // after another scene (or a manual brightness override) changes its
+  // lights out from under it.
+  async function refreshLights() {
+    try {
+      lights = await fetchJson('/api/lights')
+    } catch {
+      // Leave the last-known lights in place; the existing Retry button
+      // on the Bulbs section covers a genuinely failing bridge.
+    }
+  }
+
   async function loadScenes() {
     scenesLoading = true
     scenesError = null
@@ -151,6 +168,7 @@
       const body =
         brightnessPct == null ? { group_id: groupId } : { group_id: groupId, brightness_pct: brightnessPct }
       await postJson(`/api/scenes/${sceneId}/activate`, body)
+      await refreshLights()
     } catch (err) {
       scene.activateError = err.message
     }
@@ -159,6 +177,7 @@
 
 <main>
   <h1>Hue Light Control</h1>
+  <p class="subtitle">Bulbs and scenes on your local Hue bridge</p>
 
   <section>
     <h2>Bulbs</h2>
@@ -210,7 +229,7 @@
           <h3>{group.name}</h3>
           <div class="grid">
             {#each group.scenes as scene (scene.id)}
-              <SceneCard {scene} onActivate={activateScene} />
+              <SceneCard {scene} {lights} onActivate={activateScene} />
             {/each}
           </div>
         </div>
@@ -220,8 +239,25 @@
 </main>
 
 <style>
-  section + section {
-    margin-top: 2rem;
+  h1 {
+    margin: 0;
+    font-size: 1.75rem;
+    letter-spacing: -0.02em;
+  }
+
+  .subtitle {
+    margin: 0.3rem 0 0;
+    color: light-dark(#666, #999);
+    font-size: 0.95rem;
+  }
+
+  section {
+    margin-top: 2.5rem;
+  }
+
+  section h2 {
+    font-size: 1.15rem;
+    letter-spacing: -0.01em;
   }
 
   .section-header {
@@ -237,18 +273,32 @@
 
   .section-header button {
     font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
     padding: 0.4rem 0.9rem;
     border-radius: 999px;
     border: 1px solid light-dark(#d8d8d8, #3a3a3a);
     background: light-dark(#eee, #333);
     color: inherit;
     cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+
+  .section-header button:hover {
+    filter: brightness(0.95);
   }
 
   .grid {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(14rem, 1fr));
     gap: 1rem;
+  }
+
+  .zone-group {
+    border: 1px solid light-dark(#dedede, #333);
+    border-radius: 1rem;
+    background: light-dark(#ebebe9, #1a1a1a);
+    padding: 1.25rem;
   }
 
   .zone-group + .zone-group {
@@ -258,6 +308,7 @@
   .zone-group h3 {
     margin: 0 0 0.75rem;
     font-size: 0.95rem;
+    font-weight: 600;
     color: light-dark(#555, #aaa);
   }
 
