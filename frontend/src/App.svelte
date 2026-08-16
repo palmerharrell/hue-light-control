@@ -195,63 +195,65 @@
   <h1>Hue Light Control</h1>
   <p class="subtitle">Bulbs and scenes on your local Hue bridge</p>
 
-  <section>
-    <h2>Bulbs</h2>
-    {#if lightsLoading}
-      <p>Loading bulbs…</p>
-    {:else if lightsError}
-      <p class="error">{lightsError}</p>
-      <button onclick={loadLights}>Retry</button>
-    {:else if lights.length === 0}
-      <p>No bulbs found.</p>
-    {:else}
-      <div class="grid">
-        {#each lights as light (light.id)}
-          <LightCard {light} onToggle={toggleLight} onBrightnessChange={setLightBrightness} />
-        {/each}
-      </div>
-    {/if}
-  </section>
-
-  <section>
-    <div class="section-header">
-      <h2>Scenes</h2>
-      <button onclick={() => (showCreateForm = true)}>+ New Scene</button>
-    </div>
-    {#if showCreateForm}
-      <CreateSceneForm
-        {lights}
-        {zones}
-        onCreate={createScene}
-        onClose={() => (showCreateForm = false)}
-      />
-    {/if}
-    {#if scenesLoading || zonesLoading}
-      <p>Loading scenes…</p>
-    {:else if scenesError}
-      <p class="error">{scenesError}</p>
-      <button onclick={loadScenes}>Retry</button>
-    {:else if scenes.length === 0}
-      <p>No scenes found.</p>
-    {:else}
-      {#if zonesError}
-        <p class="error">
-          Couldn't load zones ({zonesError}) — showing scenes ungrouped.
-          <button onclick={loadZones}>Retry</button>
-        </p>
-      {/if}
-      {#each zoneGroups as group (group.id)}
-        <div class="zone-group">
-          <h3>{group.name}</h3>
-          <div class="grid">
-            {#each group.scenes as scene (scene.id)}
-              <SceneCard {scene} {lights} onActivate={activateScene} />
-            {/each}
-          </div>
+  <div class="layout">
+    <aside class="bulbs-panel">
+      <h2>Bulbs</h2>
+      {#if lightsLoading}
+        <p>Loading bulbs…</p>
+      {:else if lightsError}
+        <p class="error">{lightsError}</p>
+        <button onclick={loadLights}>Retry</button>
+      {:else if lights.length === 0}
+        <p>No bulbs found.</p>
+      {:else}
+        <div class="bulbs-list">
+          {#each lights as light (light.id)}
+            <LightCard {light} onToggle={toggleLight} onBrightnessChange={setLightBrightness} />
+          {/each}
         </div>
-      {/each}
-    {/if}
-  </section>
+      {/if}
+    </aside>
+
+    <section class="scenes-section">
+      <div class="section-header">
+        <h2>Scenes</h2>
+        <button onclick={() => (showCreateForm = true)}>+ New Scene</button>
+      </div>
+      {#if showCreateForm}
+        <CreateSceneForm
+          {lights}
+          {zones}
+          onCreate={createScene}
+          onClose={() => (showCreateForm = false)}
+        />
+      {/if}
+      {#if scenesLoading || zonesLoading}
+        <p>Loading scenes…</p>
+      {:else if scenesError}
+        <p class="error">{scenesError}</p>
+        <button onclick={loadScenes}>Retry</button>
+      {:else if scenes.length === 0}
+        <p>No scenes found.</p>
+      {:else}
+        {#if zonesError}
+          <p class="error">
+            Couldn't load zones ({zonesError}) — showing scenes ungrouped.
+            <button onclick={loadZones}>Retry</button>
+          </p>
+        {/if}
+        {#each zoneGroups as group (group.id)}
+          <div class="zone-group">
+            <h3>{group.name}</h3>
+            <div class="grid">
+              {#each group.scenes as scene (scene.id)}
+                <SceneCard {scene} {lights} onActivate={activateScene} />
+              {/each}
+            </div>
+          </div>
+        {/each}
+      {/if}
+    </section>
+  </div>
 </main>
 
 <style>
@@ -267,13 +269,44 @@
     font-size: 0.95rem;
   }
 
-  section {
+  .layout {
+    display: flex;
+    align-items: flex-start;
+    gap: 2rem;
     margin-top: 2.5rem;
   }
 
-  section h2 {
+  .bulbs-panel {
+    flex: 0 0 18rem;
+    min-width: 0;
+  }
+
+  .scenes-section {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  @media (max-width: 55rem) {
+    .layout {
+      flex-direction: column;
+    }
+
+    .bulbs-panel {
+      flex-basis: auto;
+      width: 100%;
+    }
+  }
+
+  .bulbs-panel h2,
+  .scenes-section h2 {
     font-size: 1.15rem;
     letter-spacing: -0.01em;
+  }
+
+  .bulbs-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
   }
 
   .section-header {
