@@ -75,6 +75,33 @@
     }
   }
 
+  // Same silent-refetch-and-merge shape as refreshLights, and for the same
+  // reason: a scene's playing/speed (from CLIP v2's status.active, see
+  // hue_client.get_scenes) can change on the bridge as a side effect of a
+  // plain v1 activate — scenes authored with auto_dynamic start animating
+  // immediately, with no play button involved — so activateScene needs a
+  // way to resync without a loading-state flicker across the whole list.
+  // Merges into existing scene objects in place, same reasoning as
+  // refreshLights: playScene/stopScene/setSceneSpeed capture a specific
+  // scene object by reference for their own optimistic-update-with-revert,
+  // and a wholesale array replacement here could detach one mid-flight.
+  async function refreshScenes() {
+    try {
+      const fresh = await fetchJson('/api/scenes')
+      const existingById = new Map(scenes.map((scene) => [scene.id, scene]))
+      for (const updated of fresh) {
+        const existing = existingById.get(updated.id)
+        if (existing) {
+          Object.assign(existing, updated)
+        } else {
+          scenes.push(updated)
+        }
+      }
+    } catch {
+      // Leave the last-known scenes in place — same reasoning as refreshLights.
+    }
+  }
+
   async function loadZones() {
     zonesLoading = true
     zonesError = null
@@ -187,7 +214,10 @@
     scene.activateError = null
     try {
       await postJson(`/api/scenes/${sceneId}/activate`, { group_id: groupId })
-      await refreshLights()
+      // Also resyncs playing/speed, not just lights: a recall can itself
+      // start a dynamic animation for an auto_dynamic scene (see
+      // refreshScenes), which this app has no way to predict client-side.
+      await Promise.all([refreshLights(), refreshScenes()])
     } catch (err) {
       scene.activateError = err.message
     }
@@ -219,16 +249,62 @@
   // v1-derived `lights` array the way activate/toggle do, so unlike
   // activateScene these don't refreshLights afterward — the resulting
   // per-color animation isn't representable in that model anyway.
+  //
+  // scene.playing/scene.speed are the bridge's own CLIP v2 status (see
+  // hue_client.get_scenes) — not a client guess — so these optimistically
+  // set them the same way toggleLight optimistically sets light.on, and
+  // revert + surface scene.playError on failure. SceneCard reads
+  // scene.playing/scene.speed directly rather than tracking its own copy.
   async function playScene(sceneId, speed) {
-    await postJson(`/api/scenes/${sceneId}/play`, { speed })
+    const scene = scenes.find((s) => s.id === sceneId)
+    if (!scene) return
+    const prev = { playing: scene.playing, speed: scene.speed }
+    scene.playing = true
+    scene.speed = speed
+    scene.playError = null
+    try {
+      await postJson(`/api/scenes/${sceneId}/play`, { speed })
+    } catch (err) {
+      Object.assign(scene, prev)
+      scene.playError = err.message
+    }
   }
 
   async function stopScene(sceneId) {
-    await postJson(`/api/scenes/${sceneId}/stop`, {})
+    const scene = scenes.find((s) => s.id === sceneId)
+    if (!scene) return
+    const prev = scene.playing
+    scene.playing = false
+    scene.playError = null
+    try {
+      await postJson(`/api/scenes/${sceneId}/stop`, {})
+    } catch (err) {
+      scene.playing = prev
+      scene.playError = err.message
+    }
   }
 
+  // Latest-request-wins guard, same pattern (and same reason) as
+  // setLightBrightness's latestBrightnessRequest: rapid successive speed
+  // drags can leave overlapping PUTs in flight, and an older one failing
+  // after a newer one already succeeded shouldn't stomp the newer value.
+  const latestSpeedRequest = new Map()
+
   async function setSceneSpeed(sceneId, speed) {
-    await putJson(`/api/scenes/${sceneId}/speed`, { speed })
+    const scene = scenes.find((s) => s.id === sceneId)
+    if (!scene) return
+    const prev = scene.speed
+    const token = Symbol()
+    latestSpeedRequest.set(sceneId, token)
+    scene.speed = speed
+    try {
+      await putJson(`/api/scenes/${sceneId}/speed`, { speed })
+    } catch (err) {
+      if (latestSpeedRequest.get(sceneId) === token) {
+        scene.speed = prev
+        scene.playError = err.message
+      }
+    }
   }
 </script>
 
