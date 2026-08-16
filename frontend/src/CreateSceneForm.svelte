@@ -10,17 +10,17 @@
   let submitting = $state(false)
   let error = $state(null)
 
-  let canSubmit = $derived(name.trim().length > 0 && selectedLightIds.length > 0 && !submitting)
+  // Once a zone is selected, the created scene captures the zone's actual
+  // membership regardless of what's checked below (see the hint text and
+  // HUE_API.md) — so light selection is only required when creating a
+  // standalone scene with no zone.
+  let canSubmit = $derived(
+    name.trim().length > 0 && (selectedZoneId || selectedLightIds.length > 0) && !submitting
+  )
 
   onMount(() => {
     dialog?.showModal()
   })
-
-  function toggleLight(lightId) {
-    selectedLightIds = selectedLightIds.includes(lightId)
-      ? selectedLightIds.filter((id) => id !== lightId)
-      : [...selectedLightIds, lightId]
-  }
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -37,9 +37,20 @@
   }
 
   function handleBackdropClick(event) {
-    // A click that lands on the <dialog> element itself (rather than
-    // something inside the <form>) is a click on the backdrop.
-    if (event.target === dialog) {
+    // Any click that doesn't land on a child element (backdrop AND the
+    // dialog's own padding around <form>) reports target === dialog — so
+    // that check alone can't tell a real backdrop click from one that
+    // landed in the card's padding (visually still inside the card).
+    // Compare coordinates against the dialog's own rendered box instead
+    // (its border box, which includes the padding): only a click outside
+    // that box is a real click on the backdrop.
+    const rect = dialog.getBoundingClientRect()
+    const outside =
+      event.clientX < rect.left ||
+      event.clientX > rect.right ||
+      event.clientY < rect.top ||
+      event.clientY > rect.bottom
+    if (outside) {
       dialog.close()
     }
   }
@@ -62,11 +73,7 @@
         <div class="light-list">
           {#each lights as light (light.id)}
             <label class="light-option">
-              <input
-                type="checkbox"
-                checked={selectedLightIds.includes(light.id)}
-                onchange={() => toggleLight(light.id)}
-              />
+              <input type="checkbox" bind:group={selectedLightIds} value={light.id} />
               {light.name}
             </label>
           {/each}

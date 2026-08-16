@@ -179,13 +179,16 @@ async def _request_bridge(
 async def _bridge_request(
     config: BridgeConfig, path: str, *, method: str = "GET", json_body: Optional[dict] = None
 ) -> dict:
-    # Note for future write-route authors: on a genuine network failure, the
-    # retry path below blindly re-sends the same json_body against a
-    # rediscovered/newly-current IP. That's fine for idempotent writes (e.g.
-    # "set brightness to X") but could double-fire a non-idempotent one
-    # (e.g. "toggle") if the original request actually reached the bridge
-    # before the connection dropped. No write route exists yet, so this is
-    # speculative — revisit if/when one needs stricter at-most-once semantics.
+    # On a genuine network failure, the retry path below blindly re-sends
+    # the same json_body against a rediscovered/newly-current IP. That's
+    # fine for idempotent methods (GET, and PUT writes like "set brightness
+    # to X" or "toggle" — resending the same target state twice is
+    # harmless) but would double-fire a non-idempotent POST (e.g.
+    # create_scene) if the original request actually reached the bridge
+    # before the connection dropped, silently creating a duplicate. So POST
+    # skips rediscovery/retry entirely on a network error and just raises —
+    # the caller (a form submission) can retry manually, which is normal
+    # and doesn't risk a silent duplicate.
     if not config.bridge_ip or not config.api_key:
         raise BridgeNotConfigured()
 
@@ -204,6 +207,8 @@ async def _bridge_request(
         # bridge may have gotten a new IP. Don't forward str(exc): same
         # api_key-leak concern as above — log it server-side instead.
         logger.warning("Could not reach bridge at %s: %s", config.bridge_ip, exc)
+        if method == "POST":
+            raise BridgeUnreachable("could not reach the bridge") from exc
 
     async with _rediscovery_lock:
         # A concurrent request may have already rediscovered and persisted a
