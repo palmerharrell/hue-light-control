@@ -1,5 +1,7 @@
 <script>
-  let { light, onToggle } = $props()
+  import BrightnessSlider from './BrightnessSlider.svelte'
+
+  let { light, onToggle, onBrightnessChange } = $props()
 
   // Serializes toggle clicks for this card: while a PUT is in flight the
   // button is disabled, so a fast double-click can't fire a second request
@@ -46,12 +48,11 @@
     {/if}
   </div>
 
-  <div class="brightness">
-    <div class="brightness-track">
-      <div class="brightness-fill" style:width="{light.brightness_pct}%"></div>
-    </div>
-    <span class="brightness-label">{light.brightness_pct}%</span>
-  </div>
+  <BrightnessSlider
+    value={light.brightness_pct}
+    label="{light.name} brightness"
+    onChange={(pct) => onBrightnessChange(light.id, pct)}
+  />
 </div>
 
 <style>
@@ -132,31 +133,5 @@
   .error-badge {
     background: light-dark(#fbe3e0, #3d211f);
     color: light-dark(#a3392c, #f0958a);
-  }
-
-  .brightness {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-  }
-
-  .brightness-track {
-    flex: 1;
-    height: 0.4rem;
-    border-radius: 999px;
-    background: light-dark(#eee, #333);
-    overflow: hidden;
-  }
-
-  .brightness-fill {
-    height: 100%;
-    background: light-dark(#333, #ddd);
-  }
-
-  .brightness-label {
-    font-size: 0.75rem;
-    color: light-dark(#666, #aaa);
-    width: 2.5rem;
-    text-align: right;
   }
 </style>
