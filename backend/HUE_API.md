@@ -141,6 +141,34 @@ and releasing it re-activates the scene at that brightness in one user
 action (no live-adjustment of an already-active scene, and no brightness
 state tracked for a scene between activations).
 
+## Full CLIP v1 resource catalog (research: issue #29)
+
+The bridge's local API exposes several resource types beyond the ones this
+app currently touches. Cataloged here for completeness, with a decision on
+each so future-us doesn't have to re-derive it.
+
+| Resource | Endpoints | Decision |
+|---|---|---|
+| Lights | `GET /lights`, `GET /lights/<id>`, `PUT /lights/<id>/state` | **Implemented** (on/off, brightness). |
+| Lights (color) | `PUT /lights/<id>/state` with `hue`+`sat`, `xy`, or `ct` | **Planned** — see issue filed from this research. The endpoint already supports it; only the backend model (`LightStateUpdate`) and frontend UI are missing. |
+| Lights (rename) | `POST /lights/<id>` body `{"name": "..."}` | Considered, not implementing for now — low value versus renaming once in the official Hue app. |
+| Lights (discover new) | `POST /lights` (trigger scan), `GET /lights/new` (poll results) | Considered, not implementing — bulb pairing is a rare, one-time setup task; leaving it to the official Hue app avoids building an onboarding flow for something that happens once per bulb purchase. |
+| Lights (delete) | `DELETE /lights/<id>` | Not implementing — destructive, admin-grade action with no clear use case in a day-to-day control panel. |
+| Groups (rooms/zones) | `GET /groups`, `GET /groups/<id>`, `PUT /groups/<id>/action` | **Implemented** (read + activate-via-action, including scene recall). |
+| Groups (create/rename/delete membership) | `POST /groups`, `PUT /groups/<id>`, `DELETE /groups/<id>` | Considered, not implementing — zone setup is infrequent; left to the official Hue app rather than duplicating room/zone management here. |
+| Scenes | `GET /scenes`, `GET /scenes/<id>`, `POST /scenes` | **Implemented** (list, detail, create). |
+| Scenes (activate) | `PUT /groups/<id>/action` body `{"scene": "<id>"}` | **Implemented** (no dedicated bridge endpoint — see "Activating a scene" above). |
+| Scenes (delete/edit) | `DELETE /scenes/<id>`, `PUT /scenes/<id>` | Considered, not implementing right now — no issue filed in this pass; revisit if scene clutter becomes a real annoyance. |
+| Bridge config (read) | `GET /api/config`, `GET /api/<username>/config` | **Implemented** (used for discovery/pairing). |
+| Bridge config (write) | `PUT /api/<username>/config` — bridge name, `touchlink`, `portalservices`, `linkbutton`, etc. | Not implementing — admin/provisioning surface, no fit for a light-control panel, and touchlink in particular can disrupt other paired devices. |
+| User/whitelist management | `POST /api` (pairing, already used), `DELETE /api/<username>/config/whitelist/<id>` | Not implementing beyond the existing pairing script — deleting API keys through the app risks locking the app itself out. |
+| Schedules | `GET/POST/PUT/DELETE /schedules` | Not implementing — this app is a manual control panel, not an automation/rules engine. Out of scope by design. |
+| Rules | `GET/POST/PUT/DELETE /rules` | Not implementing — same rationale as Schedules. |
+| Sensors | `GET/POST/PUT/DELETE /sensors` | Not implementing — no physical sensors in scope for this app; also automation-adjacent. |
+| Resourcelinks | `GET/POST/PUT/DELETE /resourcelinks` | Not implementing — internal grouping construct used by the official Hue app's automations; no use without Schedules/Rules. |
+| Capabilities | `GET /api/<username>/capabilities` | Not implementing — informational (resource limits like max scenes/groups); no current need to check quota before writes. |
+| Full datastore dump | `GET /api/<username>/` | Not implementing as a route — useful for debugging/exploration only, already covered ad hoc via `scripts/pair_bridge.py`-style scripts when needed. |
+
 ## Notes
 
 - This is the CLIP v1 local API (plain HTTP, no cert handling needed), not
