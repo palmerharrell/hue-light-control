@@ -214,6 +214,22 @@
     await putJson(`/api/zones/${zoneId}/state`, { on })
     await refreshLights()
   }
+
+  // Play/stop/speed are dynamic-palette-only (CLIP v2) and don't affect the
+  // v1-derived `lights` array the way activate/toggle do, so unlike
+  // activateScene these don't refreshLights afterward — the resulting
+  // per-color animation isn't representable in that model anyway.
+  async function playScene(sceneId, speed) {
+    await postJson(`/api/scenes/${sceneId}/play`, { speed })
+  }
+
+  async function stopScene(sceneId) {
+    await postJson(`/api/scenes/${sceneId}/stop`, {})
+  }
+
+  async function setSceneSpeed(sceneId, speed) {
+    await putJson(`/api/scenes/${sceneId}/speed`, { speed })
+  }
 </script>
 
 <main>
@@ -280,7 +296,13 @@
             {:else}
               <div class="grid">
                 {#each group.scenes as scene (scene.id)}
-                  <SceneCard {scene} onActivate={activateScene} />
+                  <SceneCard
+                    {scene}
+                    onActivate={activateScene}
+                    onPlay={playScene}
+                    onStop={stopScene}
+                    onSpeedChange={setSceneSpeed}
+                  />
                 {/each}
               </div>
             {/if}

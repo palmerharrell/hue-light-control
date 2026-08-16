@@ -244,6 +244,101 @@ async def _bridge_request(
         return data
 
 
+async def _request_bridge_v2(
+    ip: str, api_key: str, path: str, *, method: str = "GET", json_body: Optional[dict] = None
+) -> dict:
+    """CLIP v2 request — different transport from CLIP v1's _request_bridge.
+
+    v2 is HTTPS-only with a self-signed cert scoped to the bridge's own
+    identity rather than its LAN IP, so cert hostname validation can never
+    pass here; verify=False is the standard/accepted approach for local
+    bridge access (traffic is still encrypted, just not CA-validated).
+    Auth is a header (hue-application-key) instead of a URL segment, and
+    unlike v1 (which always replies 200 with an embedded error list), v2
+    uses real HTTP status codes for errors — so raise_for_status() alone
+    covers what v1 needed the list-shaped-response check for.
+    """
+    url = f"https://{ip}/clip/v2/resource/{path}"
+    headers = {"hue-application-key": api_key}
+    async with httpx.AsyncClient(timeout=5.0, verify=False) as client:
+        resp = await client.request(method, url, json=json_body, headers=headers)
+        resp.raise_for_status()
+        return resp.json()
+
+
+async def _bridge_request_v2(
+    config: BridgeConfig, path: str, *, method: str = "GET", json_body: Optional[dict] = None
+) -> dict:
+    """v2 counterpart to _bridge_request, deliberately without its
+    rediscovery/retry dance — this only backs the dynamic-scene
+    play/stop/speed convenience endpoints, not core control, so a stale IP
+    here just surfaces as a one-off error rather than being worth the added
+    complexity. The IP still self-heals via any v1 call's own rediscovery.
+    """
+    if not config.bridge_ip or not config.api_key:
+        raise BridgeNotConfigured()
+    try:
+        return await _request_bridge_v2(config.bridge_ip, config.api_key, path, method=method, json_body=json_body)
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Bridge at %s rejected the v2 request: %s", config.bridge_ip, exc)
+        raise BridgeUnreachable("bridge rejected the request") from exc
+    except httpx.HTTPError as exc:
+        logger.warning("Could not reach bridge (v2) at %s: %s", config.bridge_ip, exc)
+        raise BridgeUnreachable("could not reach the bridge") from exc
+
+
+async def _v2_scene_uuid(config: BridgeConfig, scene_id: str) -> str:
+    """Resolve a v1 scene id (what the rest of this app uses) to its v2 UUID.
+
+    CLIP v2 resources are addressed by UUID, not the small integer ids v1
+    uses — there's no direct conversion, only this lookup. Each v2 scene
+    carries its origin v1 id back as `id_v1` (e.g. "/scenes/12"), which is
+    the only documented way to bridge the two id spaces.
+    """
+    data = await _bridge_request_v2(config, "scene")
+    target = f"/scenes/{scene_id}"
+    for item in data.get("data", []):
+        if item.get("id_v1") == target:
+            return item["id"]
+    raise BridgeUnreachable(f"scene {scene_id} has no CLIP v2 counterpart")
+
+
+async def play_scene(config: BridgeConfig, scene_id: str, speed: float) -> None:
+    """Start the scene's dynamic palette animation (the official app's "play").
+
+    CLIP v1 has no concept of this at all — only v2's `dynamic_palette`
+    recall action animates between a scene's palette colors. Scenes without
+    a multi-color palette will have the bridge reject this; that surfaces as
+    a normal BridgeUnreachable, same as any other rejected write.
+
+    Confirmed against a real bridge: `recall` and `speed` can't be set in
+    the same PUT — the bridge rejects it with "Recall cannot be combined
+    with modifying 'speed'" (error unrelated to palette support). So this
+    sets speed first, then triggers playback in a second PUT.
+    """
+    uuid = await _v2_scene_uuid(config, scene_id)
+    await _bridge_request_v2(config, f"scene/{uuid}", method="PUT", json_body={"speed": speed})
+    await _bridge_request_v2(
+        config, f"scene/{uuid}", method="PUT", json_body={"recall": {"action": "dynamic_palette"}}
+    )
+
+
+async def stop_scene(config: BridgeConfig, scene_id: str) -> None:
+    """Stop the dynamic animation by re-recalling the scene statically.
+
+    v2 has no separate "pause" verb — `static` re-applies the scene's
+    stored colors as a fixed snapshot, which is what halts the cycling.
+    """
+    uuid = await _v2_scene_uuid(config, scene_id)
+    await _bridge_request_v2(config, f"scene/{uuid}", method="PUT", json_body={"recall": {"action": "static"}})
+
+
+async def set_scene_speed(config: BridgeConfig, scene_id: str, speed: float) -> None:
+    """Adjust the animation speed of a currently-playing dynamic scene."""
+    uuid = await _v2_scene_uuid(config, scene_id)
+    await _bridge_request_v2(config, f"scene/{uuid}", method="PUT", json_body={"speed": speed})
+
+
 async def get_lights(config: BridgeConfig) -> list[Light]:
     data = await _bridge_request(config, "lights")
     return [_to_light(light_id, raw) for light_id, raw in data.items()]
