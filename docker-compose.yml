@@ -1,0 +1,17 @@
+services:
+  backend:
+    build: ./backend
+    restart: unless-stopped
+    # Host networking matches the existing webapps/plex containers on
+    # MINIPC and lets nginx (also on host networking) reach this service
+    # over 127.0.0.1 without publishing/mapping a port.
+    network_mode: host
+    # CORS_ORIGIN is supplied by a .env file placed by hand on the deploy
+    # target (same treatment as backend/config.yaml — never synced by
+    # deploy.sh, never committed, since it contains the real LAN address).
+    # Falls back to the Vite dev origin so `docker compose up` still works
+    # locally without one.
+    environment:
+      CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:5173}"
+    volumes:
+      - ./backend/config.yaml:/app/config.yaml
