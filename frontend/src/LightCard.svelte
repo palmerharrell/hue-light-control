@@ -29,6 +29,7 @@
   }
 
   function handleKeydown(event) {
+    if (event.target.closest('.swatch, .slider-wrap')) return
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
       handleToggle()

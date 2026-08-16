@@ -37,9 +37,25 @@
   // this is also what keeps a scene's shown brightness from going stale
   // after another scene (or a manual brightness override) changes its
   // lights out from under it.
+  //
+  // Merges into the existing light objects in place rather than replacing
+  // `lights` wholesale: toggleLight/setLightBrightness capture a specific
+  // light object by reference and mutate it on PUT failure to revert/report
+  // an error. If this ran concurrently with one of those and swapped in
+  // fresh objects, a failure arriving afterward would mutate a now-detached
+  // object — invisible to the UI, silently swallowing the revert/error.
   async function refreshLights() {
     try {
-      lights = await fetchJson('/api/lights')
+      const fresh = await fetchJson('/api/lights')
+      const existingById = new Map(lights.map((light) => [light.id, light]))
+      for (const updated of fresh) {
+        const existing = existingById.get(updated.id)
+        if (existing) {
+          Object.assign(existing, updated)
+        } else {
+          lights.push(updated)
+        }
+      }
     } catch {
       // Leave the last-known lights in place; the existing Retry button
       // on the Bulbs section covers a genuinely failing bridge.
