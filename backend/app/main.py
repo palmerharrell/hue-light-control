@@ -120,9 +120,10 @@ async def create_scene_route(body: SceneCreateRequest) -> Scene:
 
 class SceneActivateRequest(BaseModel):
     group_id: str
-    # Accepted now for forward-compatibility with per-scene brightness; not
-    # wired up in the frontend yet. See activate_scene's docstring for the
-    # unverified combined-body behavior this relies on.
+    # Wired up in the frontend as the per-scene brightness slider (scale-
+    # on-activate: moving the slider re-activates the scene at that
+    # brightness). See activate_scene's docstring for the confirmed
+    # two-PUT behavior this relies on.
     brightness_pct: Optional[int] = Field(default=None, ge=1, le=100)
 
 
