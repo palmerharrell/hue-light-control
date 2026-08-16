@@ -158,6 +158,13 @@ async def _request_bridge(
         data = resp.json()
 
     if isinstance(data, list):
+        if method == "GET":
+            # The bridge's GET replies for lights/scenes/groups are always
+            # dicts keyed by id — a list here is always an error condition
+            # (e.g. an auth failure), never a legitimate payload shape.
+            error = data[0].get("error", {}) if data else {}
+            raise BridgeUnreachable(error.get("description", "bridge returned an error"))
+
         # Writes (PUT/POST) reply with a list of {"success": ...} and/or
         # {"error": ...} objects — that's normal, not an error signal by
         # itself. Only raise if the bridge actually reported an error.
@@ -172,17 +179,30 @@ async def _request_bridge(
 async def _bridge_request(
     config: BridgeConfig, path: str, *, method: str = "GET", json_body: Optional[dict] = None
 ) -> dict:
+    # Note for future write-route authors: on a genuine network failure, the
+    # retry path below blindly re-sends the same json_body against a
+    # rediscovered/newly-current IP. That's fine for idempotent writes (e.g.
+    # "set brightness to X") but could double-fire a non-idempotent one
+    # (e.g. "toggle") if the original request actually reached the bridge
+    # before the connection dropped. No write route exists yet, so this is
+    # speculative — revisit if/when one needs stricter at-most-once semantics.
     if not config.bridge_ip or not config.api_key:
         raise BridgeNotConfigured()
 
     try:
         return await _request_bridge(config.bridge_ip, config.api_key, path, method=method, json_body=json_body)
+    except httpx.HTTPStatusError as exc:
+        # The bridge responded (e.g. a 4xx on a bad write body) — the
+        # request itself was invalid, not a connectivity problem, so don't
+        # burn time on SSDP/cloud rediscovery or retry the same bad body.
+        # Don't forward str(exc): it embeds the full request URL, which
+        # contains api_key — log it server-side instead.
+        logger.warning("Bridge at %s rejected the request: %s", config.bridge_ip, exc)
+        raise BridgeUnreachable("bridge rejected the request") from exc
     except httpx.HTTPError as exc:
-        # A network-level failure (unreachable/timed out) — the bridge may
-        # have gotten a new IP. Don't forward str(exc): httpx.HTTPStatusError's
-        # message embeds the full request URL, which contains api_key. That
-        # would leak the credential to the browser via the 502 response body
-        # — log it server-side instead.
+        # A genuine network-level failure (unreachable/timed out) — the
+        # bridge may have gotten a new IP. Don't forward str(exc): same
+        # api_key-leak concern as above — log it server-side instead.
         logger.warning("Could not reach bridge at %s: %s", config.bridge_ip, exc)
 
     async with _rediscovery_lock:
@@ -192,6 +212,9 @@ async def _bridge_request(
         if current_ip and current_ip != config.bridge_ip:
             try:
                 return await _request_bridge(current_ip, config.api_key, path, method=method, json_body=json_body)
+            except httpx.HTTPStatusError as exc:
+                logger.warning("Bridge at %s rejected the request: %s", current_ip, exc)
+                raise BridgeUnreachable("bridge rejected the request") from exc
             except httpx.HTTPError:
                 pass
 
@@ -201,6 +224,9 @@ async def _bridge_request(
 
         try:
             data = await _request_bridge(new_ip, config.api_key, path, method=method, json_body=json_body)
+        except httpx.HTTPStatusError as exc:
+            logger.warning("Bridge at %s rejected the request: %s", new_ip, exc)
+            raise BridgeUnreachable("bridge rejected the request") from exc
         except httpx.HTTPError as exc:
             logger.warning("Rediscovered bridge at %s also unreachable: %s", new_ip, exc)
             raise BridgeUnreachable("could not reach the bridge") from exc

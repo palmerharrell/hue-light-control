@@ -1,5 +1,5 @@
 <script>
-  let { value, min = 1, max = 100, disabled = false, label, onChange } = $props()
+  let { value, min = 0, max = 100, disabled = false, label, onChange } = $props()
   let localValue = $state(value)
   $effect(() => { localValue = value })
 </script>
