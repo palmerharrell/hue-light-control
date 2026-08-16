@@ -94,6 +94,38 @@
     }
   }
 
+  // Same optimistic-update-with-revert pattern as toggleLight. Dragging
+  // brightness up implies the light is on, since a bulb reporting bri>0
+  // while off wouldn't visually reflect the change until turned on.
+  //
+  // Unlike the toggle button, BrightnessSlider isn't disabled while a
+  // request is in flight (that would fight the user mid-drag), so rapid
+  // successive commits can leave overlapping PUTs in flight. Track the
+  // latest request per light and only let a request revert/report an
+  // error if it's still the latest one — otherwise an older request that
+  // fails after a newer one already succeeded would stomp the newer,
+  // already-applied value.
+  const latestBrightnessRequest = new Map()
+
+  async function setLightBrightness(lightId, pct) {
+    const light = lights.find((l) => l.id === lightId)
+    if (!light) return
+    const prev = { on: light.on, brightness_pct: light.brightness_pct }
+    const token = Symbol()
+    latestBrightnessRequest.set(lightId, token)
+    light.brightness_pct = pct
+    light.on = true
+    light.toggleError = null
+    try {
+      await putJson(`/api/lights/${lightId}/state`, { brightness_pct: pct, on: true })
+    } catch (err) {
+      if (latestBrightnessRequest.get(lightId) === token) {
+        Object.assign(light, prev)
+        light.toggleError = err.message
+      }
+    }
+  }
+
   let showCreateForm = $state(false)
 
   async function createScene(name, lightIds, groupId) {
@@ -117,7 +149,7 @@
     {:else}
       <div class="grid">
         {#each lights as light (light.id)}
-          <LightCard {light} onToggle={toggleLight} />
+          <LightCard {light} onToggle={toggleLight} onBrightnessChange={setLightBrightness} />
         {/each}
       </div>
     {/if}
