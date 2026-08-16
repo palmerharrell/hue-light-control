@@ -4,6 +4,7 @@ from httpx import Response
 from app.config import BridgeConfig
 
 BRIDGE_URL = "http://192.168.x.x/api/test-api-key"
+V2_BASE = "https://192.168.x.x/clip/v2/resource"
 
 
 @respx.mock
@@ -46,17 +47,70 @@ async def test_list_scenes(client):
             },
         )
     )
+    # Deliberately no per-scene detail beyond brightness/on-off, which the
+    # frontend derives by matching light_ids against /api/lights instead
+    # (v1 has no concept of "is this scene active"). playing/speed do come
+    # from a per-scene CLIP v2 lookup though — s1 here is mid-animation.
+    respx.get(f"{V2_BASE}/scene").mock(
+        return_value=Response(
+            200,
+            json={
+                "errors": [],
+                "data": [
+                    {"id_v1": "/scenes/s1", "status": {"active": "dynamic_palette"}, "speed": 0.75},
+                ],
+            },
+        )
+    )
 
     resp = await client.get("/api/scenes")
 
     assert resp.status_code == 200
-    # Deliberately no brightness/on-off here — get_scenes doesn't fetch
-    # per-scene detail at all. The frontend derives live brightness/on-off
-    # by matching light_ids against /api/lights instead, since the bridge
-    # has no concept of "is this scene active" (see hue_client.get_scenes).
     assert resp.json() == [
-        {"id": "s1", "name": "Relax", "light_count": 2, "light_ids": ["1", "2"], "group_id": "3"},
+        {
+            "id": "s1",
+            "name": "Relax",
+            "light_count": 2,
+            "light_ids": ["1", "2"],
+            "group_id": "3",
+            "playing": True,
+            "speed": 0.75,
+        },
     ]
+
+
+@respx.mock
+async def test_list_scenes_v2_unreachable_defaults_to_not_playing(client):
+    respx.get(f"{BRIDGE_URL}/scenes").mock(
+        return_value=Response(200, json={"s1": {"name": "Relax", "lights": ["1"], "group": "3"}})
+    )
+    respx.get(f"{V2_BASE}/scene").mock(return_value=Response(500))
+
+    resp = await client.get("/api/scenes")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body[0]["playing"] is False
+    assert body[0]["speed"] == 0.5
+
+
+@respx.mock
+async def test_list_scenes_v2_malformed_response_defaults_to_not_playing(client):
+    # A 200 with unparseable JSON — a flaky-bridge scenario, not one of the
+    # HTTP-status/network errors _bridge_request_v2 itself turns into
+    # BridgeUnreachable — must still degrade gracefully rather than 500ing
+    # the whole /api/scenes response (see _get_v2_scenes_by_v1_id_or_empty).
+    respx.get(f"{BRIDGE_URL}/scenes").mock(
+        return_value=Response(200, json={"s1": {"name": "Relax", "lights": ["1"], "group": "3"}})
+    )
+    respx.get(f"{V2_BASE}/scene").mock(return_value=Response(200, content=b"not json"))
+
+    resp = await client.get("/api/scenes")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body[0]["playing"] is False
+    assert body[0]["speed"] == 0.5
 
 
 @respx.mock

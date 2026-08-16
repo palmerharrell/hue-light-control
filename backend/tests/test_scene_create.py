@@ -37,6 +37,11 @@ async def test_create_group_scene(client):
         "light_count": 3,
         "light_ids": ["1", "2", "5"],
         "group_id": "3",
+        # Newly-created scenes are never playing and default to
+        # get_scenes'/Scene's standard speed — this route builds the
+        # response directly, no CLIP v2 lookup involved.
+        "playing": False,
+        "speed": 0.5,
     }
 
 
@@ -61,6 +66,8 @@ async def test_create_light_scene_without_group(client):
         "light_count": 2,
         "light_ids": ["1", "2"],
         "group_id": None,
+        "playing": False,
+        "speed": 0.5,
     }
 
 

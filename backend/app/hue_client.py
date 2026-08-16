@@ -41,6 +41,16 @@ class Scene(BaseModel):
     light_count: int
     light_ids: list[str] = []
     group_id: Optional[str] = None
+    # Ground truth from CLIP v2's per-scene `status.active` (see get_scenes) —
+    # not a guess. Some scenes are authored with `auto_dynamic: true` (set via
+    # the official app), which makes a plain v1 activate/recall start the
+    # dynamic palette animation immediately, with no separate "play" step —
+    # `playing` reflects that even though this app's own /play endpoint was
+    # never called. speed is CLIP v2's 0-1 animation speed, present on every
+    # scene (not just currently-playing ones) since the bridge remembers the
+    # last speed it was set to.
+    playing: bool = False
+    speed: float = 0.5
 
 
 class Zone(BaseModel):
@@ -287,20 +297,25 @@ async def _bridge_request_v2(
         raise BridgeUnreachable("could not reach the bridge") from exc
 
 
-async def _v2_scene_uuid(config: BridgeConfig, scene_id: str) -> str:
-    """Resolve a v1 scene id (what the rest of this app uses) to its v2 UUID.
+async def _get_v2_scenes_by_v1_id(config: BridgeConfig) -> dict[str, dict]:
+    """Fetch every v2 scene resource, indexed by its origin v1 id (e.g. "/scenes/12").
 
     CLIP v2 resources are addressed by UUID, not the small integer ids v1
-    uses — there's no direct conversion, only this lookup. Each v2 scene
-    carries its origin v1 id back as `id_v1` (e.g. "/scenes/12"), which is
-    the only documented way to bridge the two id spaces.
+    uses — there's no direct conversion, only this lookup, and the bridge
+    only offers it as a bulk listing (no "get by v1 id" filter), so one
+    call here covers every scene rather than one round-trip per scene.
     """
     data = await _bridge_request_v2(config, "scene")
-    target = f"/scenes/{scene_id}"
-    for item in data.get("data", []):
-        if item.get("id_v1") == target:
-            return item["id"]
-    raise BridgeUnreachable(f"scene {scene_id} has no CLIP v2 counterpart")
+    return {item["id_v1"]: item for item in data.get("data", []) if "id_v1" in item}
+
+
+async def _v2_scene_uuid(config: BridgeConfig, scene_id: str) -> str:
+    """Resolve a v1 scene id (what the rest of this app uses) to its v2 UUID."""
+    by_v1_id = await _get_v2_scenes_by_v1_id(config)
+    item = by_v1_id.get(f"/scenes/{scene_id}")
+    if item is None:
+        raise BridgeUnreachable(f"scene {scene_id} has no CLIP v2 counterpart")
+    return item["id"]
 
 
 async def play_scene(config: BridgeConfig, scene_id: str, speed: float) -> None:
@@ -344,8 +359,9 @@ async def get_lights(config: BridgeConfig) -> list[Light]:
     return [_to_light(light_id, raw) for light_id, raw in data.items()]
 
 
-def _to_scene(scene_id: str, raw: dict) -> Scene:
+def _to_scene(scene_id: str, raw: dict, v2_item: Optional[dict] = None) -> Scene:
     light_ids = raw.get("lights", [])
+    v2_item = v2_item or {}
     return Scene(
         id=scene_id,
         name=raw.get("name", f"Scene {scene_id}"),
@@ -354,6 +370,8 @@ def _to_scene(scene_id: str, raw: dict) -> Scene:
         # Only GroupScenes have this; ties the scene to the group (room/zone)
         # it was created for. Absent for standalone LightScenes.
         group_id=raw.get("group"),
+        playing=v2_item.get("status", {}).get("active") == "dynamic_palette",
+        speed=v2_item.get("speed", 0.5),
     )
 
 
@@ -361,21 +379,42 @@ async def get_scenes(config: BridgeConfig) -> list[Scene]:
     # A scene's *stored* brightness (from GET /scenes/<id>'s lightstates)
     # reflects whatever it looked like when created/last saved — not
     # whether it's currently applied or what its lights are actually at
-    # right now. There's no bridge concept of "is this scene active" at
-    # all (confirmed: group.action never records which scene, if any, was
-    # last recalled). So this deliberately doesn't fetch per-scene detail —
-    # the frontend instead derives each scene's live on/off + brightness by
-    # matching light_ids against the already-loaded /api/lights, which is
-    # both actually correct (reflects reality, not a stale snapshot) and
-    # cheaper (no per-scene bridge round-trip at all).
-    data = await _bridge_request(config, "scenes")
+    # right now. The frontend derives each scene's live on/off + brightness
+    # by matching light_ids against the already-loaded /api/lights instead of
+    # trusting this stored snapshot.
+    #
+    # "Is this scene playing" is different: v1 has no such concept, but
+    # CLIP v2's per-scene `status.active` does — including reflecting scenes
+    # that started animating on their own (an `auto_dynamic` scene recalled
+    # the ordinary v1 way). So unlike the on/off+brightness case above, this
+    # fetches v2 detail for every scene, in one bulk call. A v2 failure
+    # (e.g. the bridge is momentarily only reachable over v1) degrades to
+    # every scene reporting not-playing rather than failing the whole list —
+    # playing/speed are a nice-to-have overlay, not core scene data.
+    v1_data, v2_by_v1_id = await asyncio.gather(
+        _bridge_request(config, "scenes"), _get_v2_scenes_by_v1_id_or_empty(config)
+    )
     return [
-        _to_scene(scene_id, raw)
-        for scene_id, raw in data.items()
+        _to_scene(scene_id, raw, v2_by_v1_id.get(f"/scenes/{scene_id}"))
+        for scene_id, raw in v1_data.items()
         # "Recycle" scenes are bridge-internal, created by apps to save/restore
         # state (e.g. before a light effect) — not scenes a user created.
         if not raw.get("recycle", False)
     ]
+
+
+async def _get_v2_scenes_by_v1_id_or_empty(config: BridgeConfig) -> dict[str, dict]:
+    # Deliberately broad except: playing/speed are a nice-to-have overlay
+    # (see get_scenes), so *anything* going wrong here — not just the
+    # BridgeNotConfigured/BridgeUnreachable cases _bridge_request_v2 itself
+    # raises, but e.g. a malformed/truncated 200 response from a flaky
+    # bridge that resp.json() can't parse — must degrade to "not playing"
+    # rather than 500ing the entire scene list.
+    try:
+        return await _get_v2_scenes_by_v1_id(config)
+    except Exception:
+        logger.warning("Could not fetch CLIP v2 scene status; scenes will report not-playing", exc_info=True)
+        return {}
 
 
 def _to_zone(group_id: str, raw: dict) -> Zone:

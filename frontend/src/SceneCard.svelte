@@ -17,14 +17,12 @@
     if (pending || !activatable) return
     pending = true
     try {
+      // onActivate also refreshes this scene's playing/speed from the
+      // bridge afterward — a plain v1 recall can itself start a dynamic
+      // animation for scenes authored with `auto_dynamic: true` (see
+      // App.svelte's activateScene), so `scene.playing` isn't something
+      // this card can infer client-side; it has to ask the bridge.
       await onActivate(scene.id, scene.group_id)
-      // A v1 scene recall statically re-applies the scene's stored light
-      // states (see HUE_API.md), which halts any v2 dynamic animation
-      // already running on those bulbs — so activating the card while
-      // playing must also drop the client-side playing flag, or the UI
-      // keeps showing a pause icon/speed slider for an animation that's
-      // no longer actually running.
-      playing = false
     } finally {
       pending = false
     }
@@ -42,15 +40,15 @@
     }
   }
 
-  // Whether this scene's dynamic palette animation is currently playing.
-  // The bridge has no v1-visible "is this scene animating" state (same gap
-  // get_scenes documents for on/off/brightness), and checking it via v2
-  // would mean a per-scene poll — so this is tracked client-side, optimistic
-  // on a successful play/stop, same pattern as toggleLight's optimistic on.
-  let playing = $state(false)
+  // scene.playing/scene.speed are bridge ground truth (CLIP v2's
+  // status.active — see hue_client.get_scenes), not a client guess: some
+  // scenes are authored with auto_dynamic and start animating from a plain
+  // activate, with no play button involved, so this card can't derive
+  // "is it playing" on its own. onPlay/onStop/onSpeedChange (App.svelte)
+  // own the optimistic mutation of the scene object and revert-on-error;
+  // this card just reflects scene.playing/scene.speed and tracks its own
+  // in-flight state for disabling the button mid-request.
   let playPending = $state(false)
-  let playError = $state(null)
-  let speed = $state(0.5)
 
   // Stops both click and keydown from reaching the outer card's
   // activate handler — needed on both event types since a keyboard
@@ -64,37 +62,19 @@
     event.stopPropagation()
     if (playPending) return
     playPending = true
-    playError = null
     try {
-      if (playing) {
+      if (scene.playing) {
         await onStop(scene.id)
-        playing = false
       } else {
-        await onPlay(scene.id, speed)
-        playing = true
+        await onPlay(scene.id, scene.speed ?? 0.5)
       }
-    } catch (err) {
-      playError = err.message
     } finally {
       playPending = false
     }
   }
 
-  // Same "only the latest request wins" guard App.svelte's
-  // setLightBrightness uses for the identical race: rapid successive
-  // speed changes can leave overlapping PUTs in flight, and an older one
-  // failing after a newer one already succeeded shouldn't stomp playError.
-  let latestSpeedRequest = 0
-
-  async function changeSpeed(value) {
-    const pct = Number(value)
-    speed = pct / 100
-    const token = ++latestSpeedRequest
-    try {
-      await onSpeedChange(scene.id, speed)
-    } catch (err) {
-      if (latestSpeedRequest === token) playError = err.message
-    }
+  function changeSpeed(value) {
+    onSpeedChange(scene.id, Number(value) / 100)
   }
 </script>
 
@@ -114,16 +94,16 @@
       <button
         type="button"
         class="play-toggle"
-        class:playing
+        class:playing={scene.playing}
         disabled={playPending}
-        title={playing ? 'Stop dynamic effect' : 'Play dynamic effect'}
+        title={scene.playing ? 'Stop dynamic effect' : 'Play dynamic effect'}
         onclick={togglePlay}
         onkeydown={stopBubble}
       >
-        {playing ? '⏸' : '▶'}
+        {scene.playing ? '⏸' : '▶'}
       </button>
     </span>
-    {#if playing}
+    {#if scene.playing}
       <div
         class="speed-row"
         role="group"
@@ -132,7 +112,7 @@
         onkeydown={stopBubble}
       >
         <BrightnessSlider
-          value={Math.round(speed * 100)}
+          value={Math.round((scene.speed ?? 0.5) * 100)}
           label="{scene.name} speed"
           min={0}
           showValue={false}
@@ -143,8 +123,8 @@
     {#if scene.activateError}
       <span class="badge error-badge">{scene.activateError}</span>
     {/if}
-    {#if playError}
-      <span class="badge error-badge">{playError}</span>
+    {#if scene.playError}
+      <span class="badge error-badge">{scene.playError}</span>
     {/if}
   </div>
 </div>
