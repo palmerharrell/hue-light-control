@@ -51,12 +51,62 @@ Only `Zone` groups are surfaced by this app's `/api/zones` endpoint.
 |---|---|---|
 | GET | `/api/<username>/scenes` | List configured scenes (id, name, member lights). |
 | GET | `/api/<username>/scenes/<id>` | Scene detail, including per-light stored states. |
+| POST | `/api/<username>/scenes` | Create a scene from lights' *current* live state (see below). |
+| DELETE | `/api/<username>/scenes/<id>` | Delete a scene. |
 | PUT | `/api/<username>/groups/<id>/action` | Activate a scene: body `{"scene": "<scene-id>"}`. Hue has no dedicated "activate" endpoint — scenes are applied through the owning group's action endpoint. |
 
 A `GroupScene` carries a `group` field naming the group (room, zone, or
 other) it was created for; this app's `/api/scenes` passes that through as
 `group_id` so the frontend can bucket scenes under their owning zone.
 Standalone `LightScene`s have no `group` and surface with `group_id: null`.
+
+### Creating a scene (issue: create Scenes)
+
+Not documented anywhere the app previously referenced — confirmed directly
+against a real bridge. `POST /api/<username>/scenes`, body shape depends on
+whether the scene is tied to a group:
+
+**Standalone `LightScene`** (no zone/group selected):
+```json
+{"name": "Reading", "lights": ["1", "2"], "recycle": false, "type": "LightScene"}
+```
+`lights` is required and non-empty (omitting it returns error type 5,
+"invalid/missing parameters in body"). `type` can be omitted — the bridge
+defaults an untyped create to `LightScene` — but is sent explicitly here
+for clarity. `recycle: false` marks it a user-visible scene rather than an
+app-internal state snapshot (see the `recycle` filter in `get_scenes`).
+
+**`GroupScene`** (tied to a zone):
+```json
+{"name": "Movie Night", "recycle": false, "type": "GroupScene", "group": "3"}
+```
+Critically, **`lights` must be omitted entirely** — including it alongside
+`group` (even with a value that exactly matches the group's own members)
+is rejected with `{"error": {"type": 14, "description": "Conflicting
+parameter, type: GroupScenes"}}`. A GroupScene's membership is derived
+solely from the group at creation time; there's no way to create it with a
+subset of the group's lights. This means a light-picker in the UI is only
+meaningful for a standalone `LightScene` — once a zone is selected, the
+resulting scene captures *every* light currently in that zone, regardless
+of what was checked.
+
+**Response** (both cases), matching the standard write-response shape:
+```json
+[{"success": {"id": "<bridge-assigned-scene-id>"}}]
+```
+or an error list like `[{"error": {"type": ..., "description": "..."}}]`.
+
+**Name length**: capped at 32 characters. A 33-character name is rejected
+with `{"error": {"type": 7, "description": "invalid value, ..., for
+parameter, name"}}`; 32 succeeds. (This is CLIP v1's traditional cap,
+confirmed exactly by binary-testing 32 vs. 33 chars against a real bridge.)
+
+**No target values**: the create body has no fields for target on/bri/xy/
+etc. — a scene always snapshots the involved lights' state *as it is at
+creation time* (confirmed via `GET /scenes/<id>` immediately after
+creating one: `lightstates` matched the lights' actual current state).
+There is no way to create a scene with lights set to values other than
+whatever they're currently at.
 
 ## Notes
 

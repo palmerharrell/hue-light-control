@@ -282,3 +282,37 @@ async def get_zones(config: BridgeConfig) -> list[Zone]:
         # cross-room groupings we want surfaced here.
         if raw.get("type") == "Zone"
     ]
+
+
+async def create_scene(
+    config: BridgeConfig, name: str, light_ids: list[str], group_id: Optional[str] = None
+) -> str:
+    """Create a scene from the given lights' *current* live state.
+
+    CLIP v1 has no way to set target on/bri/color values in the create body
+    — it snapshots whatever the lights are set to right now.
+
+    Confirmed against a real bridge (not documented in HUE_API.md's source
+    material): a GroupScene's membership is derived entirely from its
+    `group` — the bridge rejects a request that includes both `group` and an
+    explicit `lights` list with a "Conflicting parameter" error (type 14).
+    So `light_ids` is only sent for a standalone LightScene; for a
+    GroupScene it's ignored here (the caller may still send it to satisfy
+    the request schema, but it plays no part in what the bridge stores).
+    """
+    if group_id is not None:
+        body = {"name": name, "recycle": False, "type": "GroupScene", "group": group_id}
+    else:
+        body = {"name": name, "lights": light_ids, "recycle": False, "type": "LightScene"}
+    result = await _bridge_request(config, "scenes", method="POST", json_body=body)
+    return result[0]["success"]["id"]
+
+
+async def get_group_light_count(config: BridgeConfig, group_id: str) -> int:
+    """Light count for a single group.
+
+    Used right after creating a GroupScene to report its true membership —
+    see create_scene's docstring for why that isn't simply len(light_ids).
+    """
+    data = await _bridge_request(config, f"groups/{group_id}")
+    return len(data.get("lights", []))
