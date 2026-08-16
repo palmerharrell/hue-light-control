@@ -1,7 +1,7 @@
 <script>
   import BrightnessSlider from './BrightnessSlider.svelte'
 
-  let { zone, lights, onSetBrightness } = $props()
+  let { zone, lights, onSetBrightness, onSetZoneOn } = $props()
 
   // Same derivation SceneCard used to do per-scene (issue #47's whole
   // point: scenes in the same zone share bulbs, so this is the one true
@@ -13,32 +13,45 @@
 
   // Only "off" once lights have actually loaded (zoneLights is briefly
   // empty before that, at which point this stays false, leaving the slider
-  // enabled and at the fallback below rather than flashing "off").
+  // at the fallback below rather than flashing "off").
   let off = $derived(zoneLights.length > 0 && onLights.length === 0)
 
-  // Average brightness across just the on lights, clamped to 1 (the bridge
-  // and BrightnessSlider's min never accept 0). Falls back to 100 while
-  // lights haven't loaded yet, or if the zone isn't on.
+  // Average brightness across just the on lights. 0 when the zone is off —
+  // the slider's min is 0 here (unlike BrightnessSlider's own default of 1)
+  // specifically so "off" has a slider position, and dragging back up is how
+  // the zone turns back on. Falls back to 100 while lights haven't loaded yet.
   let liveBrightnessPct = $derived(
-    onLights.length > 0
-      ? Math.max(Math.round(onLights.reduce((sum, light) => sum + light.brightness_pct, 0) / onLights.length), 1)
-      : 100
+    off
+      ? 0
+      : onLights.length > 0
+        ? Math.round(onLights.reduce((sum, light) => sum + light.brightness_pct, 0) / onLights.length)
+        : 100
   )
 
   let pending = $state(false)
   let error = $state(null)
 
-  async function setBrightness(pct) {
+  async function runUpdate(action) {
     if (pending) return
     pending = true
     error = null
     try {
-      await onSetBrightness(zone.id, pct)
+      await action()
     } catch (err) {
       error = err.message
     } finally {
       pending = false
     }
+  }
+
+  // Dragging to 0 is an off command, not brightness_pct: 0 (the bridge
+  // rejects that) — everything above 0 sets brightness and implies on.
+  function setBrightness(pct) {
+    runUpdate(() => (pct === 0 ? onSetZoneOn(zone.id, false) : onSetBrightness(zone.id, pct)))
+  }
+
+  function turnOff() {
+    runUpdate(() => onSetZoneOn(zone.id, false))
   }
 </script>
 
@@ -46,10 +59,13 @@
   <BrightnessSlider
     value={liveBrightnessPct}
     label="{zone.name} brightness"
-    disabled={pending || off || zoneLights.length === 0}
-    showValue={!off}
+    min={0}
+    disabled={pending || zoneLights.length === 0}
     onChange={setBrightness}
   />
+  <button type="button" class="zone-off-button" disabled={pending || off || zoneLights.length === 0} onclick={turnOff}>
+    Off
+  </button>
   {#if error}
     <span class="badge error-badge">{error}</span>
   {/if}
@@ -75,5 +91,26 @@
   .error-badge {
     background: light-dark(#fbe3e0, #3d211f);
     color: light-dark(#a3392c, #f0958a);
+  }
+
+  .zone-off-button {
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.4rem 0.9rem;
+    border-radius: 999px;
+    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
+    background: light-dark(#eee, #333);
+    cursor: pointer;
+    flex-shrink: 0;
+  }
+
+  .zone-off-button:hover:not(:disabled) {
+    filter: brightness(0.95);
+  }
+
+  .zone-off-button:disabled {
+    opacity: 0.55;
+    cursor: default;
   }
 </style>

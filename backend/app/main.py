@@ -20,7 +20,7 @@ from app.hue_client import (
     get_lights,
     get_scenes,
     get_zones,
-    set_group_brightness,
+    set_group_state,
     set_light_state,
 )
 
@@ -148,11 +148,16 @@ async def activate_scene_route(scene_id: str, body: SceneActivateRequest):
 
 
 class ZoneStateUpdate(BaseModel):
-    brightness_pct: int = Field(..., ge=1, le=100)
+    on: Optional[bool] = None
+    # 0 isn't a settable target (that's what on: false is for) — matches
+    # _pct_to_bri's floor of 1.
+    brightness_pct: Optional[int] = Field(default=None, ge=1, le=100)
 
 
 @app.put("/api/zones/{zone_id}/state")
 async def update_zone_state(zone_id: str, update: ZoneStateUpdate):
+    if update.on is None and update.brightness_pct is None:
+        raise HTTPException(status_code=400, detail="must set on and/or brightness_pct")
     config = load_config()
-    await set_group_brightness(config, zone_id, update.brightness_pct)
+    await set_group_state(config, zone_id, on=update.on, brightness_pct=update.brightness_pct)
     return {"status": "ok"}
