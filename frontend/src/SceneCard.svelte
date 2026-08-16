@@ -1,11 +1,42 @@
 <script>
-  let { scene } = $props()
+  let { scene, onActivate } = $props()
+
+  // Standalone LightScenes (no group_id) can't be activated via the
+  // group-action endpoint (see HUE_API.md's Scenes section) — render them
+  // as non-interactive instead of wiring up a click handler.
+  let activatable = $derived(scene.group_id != null)
+
+  // Serializes activation clicks for this card, same reasoning as
+  // LightCard's toggle button: while a request is in flight the button is
+  // disabled, so a fast double-click can't fire a second overlapping
+  // activate request.
+  let pending = $state(false)
+
+  async function handleActivate() {
+    if (pending || !activatable) return
+    pending = true
+    try {
+      await onActivate(scene.id, scene.group_id)
+    } finally {
+      pending = false
+    }
+  }
 </script>
 
-<div class="card">
+<button
+  type="button"
+  class="card"
+  class:inactive={!activatable}
+  disabled={!activatable || pending}
+  title={activatable ? undefined : "Can't activate — not part of a zone"}
+  onclick={handleActivate}
+>
   <span class="name">{scene.name}</span>
   <span class="badge">{scene.light_count} {scene.light_count === 1 ? 'light' : 'lights'}</span>
-</div>
+  {#if scene.activateError}
+    <span class="badge error-badge">{scene.activateError}</span>
+  {/if}
+</button>
 
 <style>
   .card {
@@ -16,6 +47,28 @@
     flex-direction: column;
     gap: 0.6rem;
     background: light-dark(#fff, #1e1e1e);
+    width: 100%;
+    font: inherit;
+    text-align: left;
+    color: inherit;
+    cursor: pointer;
+  }
+
+  .card:hover:not(:disabled) {
+    filter: brightness(0.97);
+  }
+
+  .card:focus-visible {
+    outline: 2px solid light-dark(#1c7a2e, #7fe396);
+    outline-offset: 2px;
+  }
+
+  .card:disabled {
+    cursor: default;
+  }
+
+  .card.inactive {
+    opacity: 0.55;
   }
 
   .name {
@@ -29,5 +82,10 @@
     background: light-dark(#eee, #333);
     color: light-dark(#555, #ccc);
     width: fit-content;
+  }
+
+  .error-badge {
+    background: light-dark(#fbe3e0, #3d211f);
+    color: light-dark(#a3392c, #f0958a);
   }
 </style>

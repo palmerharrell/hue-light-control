@@ -13,6 +13,7 @@ from app.hue_client import (
     Light,
     Scene,
     Zone,
+    activate_scene,
     create_scene,
     get_group_light_count,
     get_lights,
@@ -115,3 +116,18 @@ async def create_scene_route(body: SceneCreateRequest) -> Scene:
         scene_id = await create_scene(config, body.name, body.light_ids, body.group_id)
         light_count = len(body.light_ids)
     return Scene(id=scene_id, name=body.name, light_count=light_count, group_id=body.group_id)
+
+
+class SceneActivateRequest(BaseModel):
+    group_id: str
+    # Accepted now for forward-compatibility with per-scene brightness; not
+    # wired up in the frontend yet. See activate_scene's docstring for the
+    # unverified combined-body behavior this relies on.
+    brightness_pct: Optional[int] = Field(default=None, ge=1, le=100)
+
+
+@app.post("/api/scenes/{scene_id}/activate")
+async def activate_scene_route(scene_id: str, body: SceneActivateRequest):
+    config = load_config()
+    await activate_scene(config, body.group_id, scene_id, brightness_pct=body.brightness_pct)
+    return {"status": "ok"}
