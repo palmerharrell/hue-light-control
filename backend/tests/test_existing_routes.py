@@ -95,6 +95,25 @@ async def test_list_scenes_v2_unreachable_defaults_to_not_playing(client):
 
 
 @respx.mock
+async def test_list_scenes_v2_malformed_response_defaults_to_not_playing(client):
+    # A 200 with unparseable JSON — a flaky-bridge scenario, not one of the
+    # HTTP-status/network errors _bridge_request_v2 itself turns into
+    # BridgeUnreachable — must still degrade gracefully rather than 500ing
+    # the whole /api/scenes response (see _get_v2_scenes_by_v1_id_or_empty).
+    respx.get(f"{BRIDGE_URL}/scenes").mock(
+        return_value=Response(200, json={"s1": {"name": "Relax", "lights": ["1"], "group": "3"}})
+    )
+    respx.get(f"{V2_BASE}/scene").mock(return_value=Response(200, content=b"not json"))
+
+    resp = await client.get("/api/scenes")
+
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body[0]["playing"] is False
+    assert body[0]["speed"] == 0.5
+
+
+@respx.mock
 async def test_list_zones(client):
     respx.get(f"{BRIDGE_URL}/groups").mock(
         return_value=Response(

@@ -404,9 +404,15 @@ async def get_scenes(config: BridgeConfig) -> list[Scene]:
 
 
 async def _get_v2_scenes_by_v1_id_or_empty(config: BridgeConfig) -> dict[str, dict]:
+    # Deliberately broad except: playing/speed are a nice-to-have overlay
+    # (see get_scenes), so *anything* going wrong here — not just the
+    # BridgeNotConfigured/BridgeUnreachable cases _bridge_request_v2 itself
+    # raises, but e.g. a malformed/truncated 200 response from a flaky
+    # bridge that resp.json() can't parse — must degrade to "not playing"
+    # rather than 500ing the entire scene list.
     try:
         return await _get_v2_scenes_by_v1_id(config)
-    except (BridgeNotConfigured, BridgeUnreachable):
+    except Exception:
         logger.warning("Could not fetch CLIP v2 scene status; scenes will report not-playing", exc_info=True)
         return {}
 

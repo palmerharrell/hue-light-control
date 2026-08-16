@@ -212,6 +212,10 @@
     const scene = scenes.find((s) => s.id === sceneId)
     if (!scene) return
     scene.activateError = null
+    // Also clears any stale play/stop/speed error — a fresh activate makes
+    // whatever previously failed there moot, and refreshScenes below is
+    // about to report the current real state regardless.
+    scene.playError = null
     try {
       await postJson(`/api/scenes/${sceneId}/activate`, { group_id: groupId })
       // Also resyncs playing/speed, not just lights: a recall can itself
@@ -255,18 +259,30 @@
   // set them the same way toggleLight optimistically sets light.on, and
   // revert + surface scene.playError on failure. SceneCard reads
   // scene.playing/scene.speed directly rather than tracking its own copy.
+  //
+  // All three share one latest-request-wins guard, same pattern (and same
+  // reason) as setLightBrightness's latestBrightnessRequest: they all touch
+  // the same scene.playing/scene.speed fields, so e.g. a slow /play POST
+  // failing after a since-succeeded speed drag must not revert that newer
+  // speed — not just an older speed change racing a newer one.
+  const latestSceneRequest = new Map()
+
   async function playScene(sceneId, speed) {
     const scene = scenes.find((s) => s.id === sceneId)
     if (!scene) return
     const prev = { playing: scene.playing, speed: scene.speed }
+    const token = Symbol()
+    latestSceneRequest.set(sceneId, token)
     scene.playing = true
     scene.speed = speed
     scene.playError = null
     try {
       await postJson(`/api/scenes/${sceneId}/play`, { speed })
     } catch (err) {
-      Object.assign(scene, prev)
-      scene.playError = err.message
+      if (latestSceneRequest.get(sceneId) === token) {
+        Object.assign(scene, prev)
+        scene.playError = err.message
+      }
     }
   }
 
@@ -274,33 +290,31 @@
     const scene = scenes.find((s) => s.id === sceneId)
     if (!scene) return
     const prev = scene.playing
+    const token = Symbol()
+    latestSceneRequest.set(sceneId, token)
     scene.playing = false
     scene.playError = null
     try {
       await postJson(`/api/scenes/${sceneId}/stop`, {})
     } catch (err) {
-      scene.playing = prev
-      scene.playError = err.message
+      if (latestSceneRequest.get(sceneId) === token) {
+        scene.playing = prev
+        scene.playError = err.message
+      }
     }
   }
-
-  // Latest-request-wins guard, same pattern (and same reason) as
-  // setLightBrightness's latestBrightnessRequest: rapid successive speed
-  // drags can leave overlapping PUTs in flight, and an older one failing
-  // after a newer one already succeeded shouldn't stomp the newer value.
-  const latestSpeedRequest = new Map()
 
   async function setSceneSpeed(sceneId, speed) {
     const scene = scenes.find((s) => s.id === sceneId)
     if (!scene) return
     const prev = scene.speed
     const token = Symbol()
-    latestSpeedRequest.set(sceneId, token)
+    latestSceneRequest.set(sceneId, token)
     scene.speed = speed
     try {
       await putJson(`/api/scenes/${sceneId}/speed`, { speed })
     } catch (err) {
-      if (latestSpeedRequest.get(sceneId) === token) {
+      if (latestSceneRequest.get(sceneId) === token) {
         scene.speed = prev
         scene.playError = err.message
       }
