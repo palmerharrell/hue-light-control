@@ -73,15 +73,24 @@
     return [...byId.values(), other].filter((group) => group.scenes.length > 0)
   })
 
+  // Note: a bridge write can succeed here (200) for a light that's
+  // temporarily unreachable — Hue queues state changes for offline Zigbee
+  // devices rather than rejecting them. In that case the optimistic value
+  // below sticks even though the bulb hasn't physically changed yet; it
+  // reconciles on the next /api/lights refetch. Not gating the toggle on
+  // reachable is intentional (see LightCard) — this staleness window is an
+  // accepted tradeoff of that.
   async function toggleLight(lightId, on) {
     const light = lights.find((l) => l.id === lightId)
     if (!light) return
     const prev = light.on
     light.on = on
+    light.toggleError = null
     try {
       await putJson(`/api/lights/${lightId}/state`, { on })
-    } catch {
+    } catch (err) {
       light.on = prev
+      light.toggleError = err.message
     }
   }
 
