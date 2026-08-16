@@ -382,3 +382,19 @@ async def get_group_light_ids(config: BridgeConfig, group_id: str) -> list[str]:
     """
     data = await _bridge_request(config, f"groups/{group_id}")
     return data.get("lights", [])
+
+
+async def set_zone_brightness_for_on_lights(config: BridgeConfig, group_id: str, brightness_pct: int) -> None:
+    """Adjust brightness for only the zone's currently-on lights, leaving off ones off.
+
+    Unlike set_group_state's group-action PUT (which is what turns a whole
+    zone on/off together), a plain slider drag shouldn't wake up bulbs the
+    user deliberately turned off individually — so this fetches current
+    on/off state first and only targets lights that are already on.
+    """
+    light_ids, lights = await asyncio.gather(get_group_light_ids(config, group_id), get_lights(config))
+    on_ids = {light.id for light in lights if light.on}
+    target_ids = [light_id for light_id in light_ids if light_id in on_ids]
+    await asyncio.gather(
+        *(set_light_state(config, light_id, brightness_pct=brightness_pct) for light_id in target_ids)
+    )

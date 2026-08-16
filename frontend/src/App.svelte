@@ -197,11 +197,16 @@
   // as a scene-specific brightness (issue #47) — this sets the zone's
   // brightness directly, independent of any scene. Errors are surfaced by
   // ZoneBrightnessSlider itself (it awaits this call), not stashed here.
-  // Dragging brightness up implies the zone is on, same as setLightBrightness
-  // does per-light — otherwise a light the Off button (or an earlier 0 drag)
-  // turned off would take the new bri without actually turning back on.
-  async function setZoneBrightness(zoneId, pct) {
-    await putJson(`/api/zones/${zoneId}/state`, { brightness_pct: pct, on: true })
+  //
+  // turnOn distinguishes two gestures that look the same (dragging the
+  // slider up) but should behave differently: turnOn is only set when the
+  // zone was fully off, where the drag is the explicit "turn the zone back
+  // on" gesture and should apply to every light. Otherwise (some lights
+  // already on) it's a plain brightness adjustment and must NOT force `on`
+  // — the backend then only touches lights that are already on, leaving any
+  // individually-off bulb in that zone alone rather than waking it up.
+  async function setZoneBrightness(zoneId, pct, { turnOn = false } = {}) {
+    await putJson(`/api/zones/${zoneId}/state`, { brightness_pct: pct, ...(turnOn ? { on: true } : {}) })
     await refreshLights()
   }
 

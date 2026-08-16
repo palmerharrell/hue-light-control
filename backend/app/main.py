@@ -22,6 +22,7 @@ from app.hue_client import (
     get_zones,
     set_group_state,
     set_light_state,
+    set_zone_brightness_for_on_lights,
 )
 
 app = FastAPI(title="Hue Light Control API")
@@ -159,5 +160,13 @@ async def update_zone_state(zone_id: str, update: ZoneStateUpdate):
     if update.on is None and update.brightness_pct is None:
         raise HTTPException(status_code=400, detail="must set on and/or brightness_pct")
     config = load_config()
-    await set_group_state(config, zone_id, on=update.on, brightness_pct=update.brightness_pct)
+    if update.on is not None:
+        # Explicit on/off (the zone Off button, or the frontend's "drag up
+        # from fully off" gesture) — applies to every light in the zone via
+        # one group-action PUT, same as before.
+        await set_group_state(config, zone_id, on=update.on, brightness_pct=update.brightness_pct)
+    else:
+        # A plain brightness drag on an already-partially-on zone shouldn't
+        # wake up bulbs the user individually turned off.
+        await set_zone_brightness_for_on_lights(config, zone_id, update.brightness_pct)
     return {"status": "ok"}
