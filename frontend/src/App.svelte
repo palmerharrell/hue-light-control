@@ -2,15 +2,7 @@
   import { onMount } from 'svelte'
   import LightCard from './LightCard.svelte'
   import SceneCard from './SceneCard.svelte'
-
-  async function fetchJson(url) {
-    const res = await fetch(url)
-    if (!res.ok) {
-      const body = await res.json().catch(() => ({}))
-      throw new Error(body.detail ?? `Request failed (${res.status})`)
-    }
-    return res.json()
-  }
+  import { fetchJson } from './api.js'
 
   let lights = $state([])
   let lightsLoading = $state(true)

@@ -123,44 +123,86 @@ def _light_color(state: dict) -> Optional[str]:
     return None
 
 
+def _bri_to_pct(bri: int) -> int:
+    return round(bri / 254 * 100)
+
+
+def _pct_to_bri(pct: int) -> int:
+    """Map a 0-100 brightness percent to Hue's 1-254 `bri` range.
+
+    Never returns 0: Hue's `bri` field is 1-254, with on/off tracked
+    separately via the `on` field.
+    """
+    return max(1, min(254, round(pct / 100 * 254)))
+
+
 def _to_light(light_id: str, raw: dict) -> Light:
     state = raw.get("state", {})
     return Light(
         id=light_id,
         name=raw.get("name", f"Light {light_id}"),
         on=state.get("on", False),
-        brightness_pct=round(state.get("bri", 0) / 254 * 100),
+        brightness_pct=_bri_to_pct(state.get("bri", 0)),
         color=_light_color(state),
         reachable=state.get("reachable", False),
     )
 
 
-async def _request_bridge(ip: str, api_key: str, path: str) -> dict:
+async def _request_bridge(
+    ip: str, api_key: str, path: str, *, method: str = "GET", json_body: Optional[dict] = None
+) -> dict:
     url = f"http://{ip}/api/{api_key}/{path}"
     async with httpx.AsyncClient(timeout=5.0) as client:
-        resp = await client.get(url)
+        resp = await client.request(method, url, json=json_body)
         resp.raise_for_status()
         data = resp.json()
 
     if isinstance(data, list):
-        error = data[0].get("error", {}) if data else {}
-        raise BridgeUnreachable(error.get("description", "bridge returned an error"))
+        if method == "GET":
+            # The bridge's GET replies for lights/scenes/groups are always
+            # dicts keyed by id — a list here is always an error condition
+            # (e.g. an auth failure), never a legitimate payload shape.
+            error = data[0].get("error", {}) if data else {}
+            raise BridgeUnreachable(error.get("description", "bridge returned an error"))
+
+        # Writes (PUT/POST) reply with a list of {"success": ...} and/or
+        # {"error": ...} objects — that's normal, not an error signal by
+        # itself. Only raise if the bridge actually reported an error.
+        errors = [item["error"] for item in data if "error" in item]
+        if errors:
+            raise BridgeUnreachable(errors[0].get("description", "bridge returned an error"))
+        return data
 
     return data
 
 
-async def _bridge_get(config: BridgeConfig, path: str) -> dict:
+async def _bridge_request(
+    config: BridgeConfig, path: str, *, method: str = "GET", json_body: Optional[dict] = None
+) -> dict:
+    # Note for future write-route authors: on a genuine network failure, the
+    # retry path below blindly re-sends the same json_body against a
+    # rediscovered/newly-current IP. That's fine for idempotent writes (e.g.
+    # "set brightness to X") but could double-fire a non-idempotent one
+    # (e.g. "toggle") if the original request actually reached the bridge
+    # before the connection dropped. No write route exists yet, so this is
+    # speculative — revisit if/when one needs stricter at-most-once semantics.
     if not config.bridge_ip or not config.api_key:
         raise BridgeNotConfigured()
 
     try:
-        return await _request_bridge(config.bridge_ip, config.api_key, path)
+        return await _request_bridge(config.bridge_ip, config.api_key, path, method=method, json_body=json_body)
+    except httpx.HTTPStatusError as exc:
+        # The bridge responded (e.g. a 4xx on a bad write body) — the
+        # request itself was invalid, not a connectivity problem, so don't
+        # burn time on SSDP/cloud rediscovery or retry the same bad body.
+        # Don't forward str(exc): it embeds the full request URL, which
+        # contains api_key — log it server-side instead.
+        logger.warning("Bridge at %s rejected the request: %s", config.bridge_ip, exc)
+        raise BridgeUnreachable("bridge rejected the request") from exc
     except httpx.HTTPError as exc:
-        # A network-level failure (unreachable/timed out) — the bridge may
-        # have gotten a new IP. Don't forward str(exc): httpx.HTTPStatusError's
-        # message embeds the full request URL, which contains api_key. That
-        # would leak the credential to the browser via the 502 response body
-        # — log it server-side instead.
+        # A genuine network-level failure (unreachable/timed out) — the
+        # bridge may have gotten a new IP. Don't forward str(exc): same
+        # api_key-leak concern as above — log it server-side instead.
         logger.warning("Could not reach bridge at %s: %s", config.bridge_ip, exc)
 
     async with _rediscovery_lock:
@@ -169,7 +211,10 @@ async def _bridge_get(config: BridgeConfig, path: str) -> dict:
         current_ip = load_config().bridge_ip
         if current_ip and current_ip != config.bridge_ip:
             try:
-                return await _request_bridge(current_ip, config.api_key, path)
+                return await _request_bridge(current_ip, config.api_key, path, method=method, json_body=json_body)
+            except httpx.HTTPStatusError as exc:
+                logger.warning("Bridge at %s rejected the request: %s", current_ip, exc)
+                raise BridgeUnreachable("bridge rejected the request") from exc
             except httpx.HTTPError:
                 pass
 
@@ -178,7 +223,10 @@ async def _bridge_get(config: BridgeConfig, path: str) -> dict:
             raise BridgeUnreachable("could not reach the bridge")
 
         try:
-            data = await _request_bridge(new_ip, config.api_key, path)
+            data = await _request_bridge(new_ip, config.api_key, path, method=method, json_body=json_body)
+        except httpx.HTTPStatusError as exc:
+            logger.warning("Bridge at %s rejected the request: %s", new_ip, exc)
+            raise BridgeUnreachable("bridge rejected the request") from exc
         except httpx.HTTPError as exc:
             logger.warning("Rediscovered bridge at %s also unreachable: %s", new_ip, exc)
             raise BridgeUnreachable("could not reach the bridge") from exc
@@ -190,7 +238,7 @@ async def _bridge_get(config: BridgeConfig, path: str) -> dict:
 
 
 async def get_lights(config: BridgeConfig) -> list[Light]:
-    data = await _bridge_get(config, "lights")
+    data = await _bridge_request(config, "lights")
     return [_to_light(light_id, raw) for light_id, raw in data.items()]
 
 
@@ -206,7 +254,7 @@ def _to_scene(scene_id: str, raw: dict) -> Scene:
 
 
 async def get_scenes(config: BridgeConfig) -> list[Scene]:
-    data = await _bridge_get(config, "scenes")
+    data = await _bridge_request(config, "scenes")
     return [
         _to_scene(scene_id, raw)
         for scene_id, raw in data.items()
@@ -225,7 +273,7 @@ def _to_zone(group_id: str, raw: dict) -> Zone:
 
 
 async def get_zones(config: BridgeConfig) -> list[Zone]:
-    data = await _bridge_get(config, "groups")
+    data = await _bridge_request(config, "groups")
     return [
         _to_zone(group_id, raw)
         for group_id, raw in data.items()

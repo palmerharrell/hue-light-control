@@ -1,5 +1,6 @@
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, Request
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 
 from app.config import load_config
 from app.hue_client import (
@@ -23,6 +24,16 @@ app.add_middleware(
 )
 
 
+@app.exception_handler(BridgeNotConfigured)
+async def bridge_not_configured_handler(request: Request, exc: BridgeNotConfigured) -> JSONResponse:
+    return JSONResponse(status_code=503, content={"detail": "Bridge not configured"})
+
+
+@app.exception_handler(BridgeUnreachable)
+async def bridge_unreachable_handler(request: Request, exc: BridgeUnreachable) -> JSONResponse:
+    return JSONResponse(status_code=502, content={"detail": f"Bridge unreachable: {exc}"})
+
+
 @app.get("/api/health")
 def health():
     config = load_config()
@@ -32,31 +43,16 @@ def health():
 @app.get("/api/lights")
 async def list_lights() -> list[Light]:
     config = load_config()
-    try:
-        return await get_lights(config)
-    except BridgeNotConfigured:
-        raise HTTPException(status_code=503, detail="Bridge not configured")
-    except BridgeUnreachable as exc:
-        raise HTTPException(status_code=502, detail=f"Bridge unreachable: {exc}")
+    return await get_lights(config)
 
 
 @app.get("/api/scenes")
 async def list_scenes() -> list[Scene]:
     config = load_config()
-    try:
-        return await get_scenes(config)
-    except BridgeNotConfigured:
-        raise HTTPException(status_code=503, detail="Bridge not configured")
-    except BridgeUnreachable as exc:
-        raise HTTPException(status_code=502, detail=f"Bridge unreachable: {exc}")
+    return await get_scenes(config)
 
 
 @app.get("/api/zones")
 async def list_zones() -> list[Zone]:
     config = load_config()
-    try:
-        return await get_zones(config)
-    except BridgeNotConfigured:
-        raise HTTPException(status_code=503, detail="Bridge not configured")
-    except BridgeUnreachable as exc:
-        raise HTTPException(status_code=502, detail=f"Bridge unreachable: {exc}")
+    return await get_zones(config)
