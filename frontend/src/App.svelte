@@ -469,10 +469,6 @@
     gap: 1rem;
   }
 
-  .section-header h2 {
-    margin: 0 0 1.25rem;
-  }
-
   .zone-group-footer button {
     font: inherit;
     font-size: 0.85rem;
