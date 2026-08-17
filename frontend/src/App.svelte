@@ -451,6 +451,7 @@
 
   .bulbs-panel h2,
   .scenes-section h2 {
+    margin: 0 0 1.25rem;
     font-size: 1.15rem;
     letter-spacing: -0.01em;
   }
@@ -466,10 +467,6 @@
     align-items: center;
     justify-content: space-between;
     gap: 1rem;
-  }
-
-  .section-header h2 {
-    margin: 0;
   }
 
   .zone-group-footer button {
