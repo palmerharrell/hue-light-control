@@ -1,41 +1,37 @@
 :root {
-  color-scheme: light dark;
-  font-family: -apple-system, system-ui, sans-serif;
+  /* Fallback values only — matches the "Default - Dark" theme in themes.js.
+     App.svelte sets these as inline styles on <html> for whichever theme is
+     selected (issue #21), which take precedence the moment JS runs; this
+     :root block just avoids an unstyled flash before that happens (or if JS
+     is unavailable). Every color/shape elsewhere in the app should reference
+     one of these tokens rather than hardcoding a value directly, so it
+     repaints when the theme switches. */
+  --bg: #1c1712;
+  --surface: #241d16;
+  --surface-alt: #2a2018;
+  --border: #3d3020;
+  --text: #f2e6d8;
+  --text-muted: #b8a488;
+  --accent: #e8952f;
+  --accent-text: #1c1712;
+  --accent-soft-bg: #3d2a12;
+  --accent-soft-border: #6b4a1e;
+  --shadow-color: rgba(0, 0, 0, 0.35);
+  --error-bg: #3d211f;
+  --error-text: #f0958a;
 
-  /* Warm palette (default) — issue #20's two selectable themes, toggled by
-     setting data-palette on <html> (see App.svelte). Every color elsewhere
-     in the app should reference one of these tokens rather than hardcoding
-     light-dark() directly, so it repaints when the palette switches. */
-  --bg: light-dark(#faf6f1, #1c1712);
-  --surface: light-dark(#ffffff, #241d16);
-  --surface-alt: light-dark(#f5ede4, #2a2018);
-  --border: light-dark(#e0d3c2, #3d3020);
-  --text: light-dark(#2a2015, #f2e6d8);
-  --text-muted: light-dark(#8a7259, #b8a488);
-  --accent: light-dark(#c2650a, #e8952f);
-  --accent-text: light-dark(#fff8f0, #1c1712);
-  --accent-soft-bg: light-dark(#ffe9d5, #3d2a12);
-  --accent-soft-border: light-dark(#f0b876, #6b4a1e);
-  --shadow-color: light-dark(rgba(40, 25, 10, 0.1), rgba(0, 0, 0, 0.35));
+  --font-family: -apple-system, system-ui, sans-serif;
+  --radius-sm: 0.5rem;
+  --radius-md: 0.75rem;
+  --radius-lg: 1rem;
+  --radius-pill: 999px;
+  /* Hints native form controls (scrollbars, range inputs, etc.) to render
+     for whichever mode the active theme actually is, since themes are now
+     fixed palettes rather than the light-dark() pairs issue #20 used. */
+  --color-scheme: dark;
 
-  /* Semantic — errors read as "error" regardless of palette, so these don't
-     vary between warm and cool. */
-  --error-bg: light-dark(#fbe3e0, #3d211f);
-  --error-text: light-dark(#a3392c, #f0958a);
-}
-
-[data-palette='cool'] {
-  --bg: light-dark(#f1f6f8, #10171c);
-  --surface: light-dark(#ffffff, #17212a);
-  --surface-alt: light-dark(#e8eef2, #1c2830);
-  --border: light-dark(#ccdae3, #2b3c47);
-  --text: light-dark(#16232b, #e4edf2);
-  --text-muted: light-dark(#5f7684, #93a8b3);
-  --accent: light-dark(#1f6fb2, #4fa3e0);
-  --accent-text: light-dark(#f5fbff, #0b1116);
-  --accent-soft-bg: light-dark(#dcedfa, #16283a);
-  --accent-soft-border: light-dark(#8ec3e8, #235279);
-  --shadow-color: light-dark(rgba(10, 30, 45, 0.1), rgba(0, 0, 0, 0.35));
+  font-family: var(--font-family);
+  color-scheme: var(--color-scheme);
 }
 
 *,
@@ -92,7 +88,7 @@ main {
 .dialog-form select {
   font: inherit;
   padding: 0.4rem 0.5rem;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-sm);
   border: 1px solid var(--border);
   background: var(--surface);
   color: inherit;
@@ -105,7 +101,7 @@ main {
   max-height: 10rem;
   overflow-y: auto;
   padding: 0.5rem;
-  border-radius: 0.5rem;
+  border-radius: var(--radius-sm);
   background: var(--surface-alt);
 }
 
@@ -141,7 +137,7 @@ main {
 .dialog-form button {
   font: inherit;
   padding: 0.4rem 0.9rem;
-  border-radius: 999px;
+  border-radius: var(--radius-pill);
   border: 1px solid var(--border);
   background: var(--surface-alt);
   color: inherit;

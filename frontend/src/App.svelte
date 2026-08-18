@@ -5,7 +5,9 @@
   import ZoneBrightnessSlider from './ZoneBrightnessSlider.svelte'
   import CreateSceneForm from './CreateSceneForm.svelte'
   import AddFavoriteForm from './AddFavoriteForm.svelte'
-  import { fetchJson, postJson, putJson } from './api.js'
+  import ImportThemeForm from './ImportThemeForm.svelte'
+  import { deleteJson, fetchJson, postJson, putJson } from './api.js'
+  import { applyTheme, builtInThemes, DEFAULT_THEME_ID } from './themes.js'
 
   let lights = $state([])
   let lightsLoading = $state(true)
@@ -57,28 +59,67 @@
     }
   })
 
-  // Warm/cool color palette (issue #20), persisted the same way as
-  // bulbsCollapsed. Applied via a data-palette attribute on <html> rather
-  // than scoped to this component, since app.css's palette tokens (and the
-  // global .dialog-form rules) need it to cascade to the whole page,
-  // including dialogs mounted outside <main>.
-  function readPalette() {
+  // Theme (issue #21, replacing the warm/cool toggle from issue #20).
+  // Built-in themes ship as app code (see themes.js); imported ones are
+  // fetched from the backend below, same split as favorites/scenes (local
+  // preference vs. bridge/app data).
+  let customThemes = $state([])
+  let themesError = $state(null)
+
+  async function loadThemes() {
+    themesError = null
     try {
-      return localStorage.getItem('palette') === 'cool' ? 'cool' : 'warm'
-    } catch {
-      return 'warm'
+      customThemes = await fetchJson('/api/themes')
+    } catch (err) {
+      themesError = err.message
     }
   }
 
-  let palette = $state(readPalette())
-  $effect(() => {
-    document.documentElement.dataset.palette = palette
+  let allThemes = $derived([...builtInThemes, ...customThemes])
+
+  function readThemeId() {
     try {
-      localStorage.setItem('palette', palette)
+      return localStorage.getItem('themeId') ?? DEFAULT_THEME_ID
     } catch {
-      // Ignore — persistence is a nice-to-have, not required for the toggle to work.
+      return DEFAULT_THEME_ID
+    }
+  }
+
+  let themeId = $state(readThemeId())
+  // Falls back to the default theme if the persisted id no longer resolves
+  // to anything — e.g. a previously-imported theme was removed elsewhere.
+  let activeTheme = $derived(
+    allThemes.find((t) => t.id === themeId) ?? allThemes.find((t) => t.id === DEFAULT_THEME_ID)
+  )
+
+  $effect(() => {
+    if (!activeTheme) return
+    applyTheme(activeTheme)
+    try {
+      localStorage.setItem('themeId', themeId)
+    } catch {
+      // Ignore — persistence is a nice-to-have, not required for the theme to apply.
     }
   })
+
+  // Whether the "Import Theme" dialog is open (same one-dialog-at-a-time
+  // shape as addFavoriteFormOpen).
+  let importThemeFormOpen = $state(false)
+
+  async function importTheme(theme) {
+    const imported = await postJson('/api/themes', theme)
+    customThemes = [...customThemes, imported]
+    themeId = imported.id
+  }
+
+  // Only ever offered for a custom (imported) theme — see the template,
+  // built-in themes have no delete control. Falls back to the default
+  // theme if the one just deleted was active.
+  async function deleteTheme(id) {
+    await deleteJson(`/api/themes/${id}`)
+    customThemes = customThemes.filter((t) => t.id !== id)
+    if (themeId === id) themeId = DEFAULT_THEME_ID
+  }
 
   async function loadLights() {
     lightsLoading = true
@@ -181,6 +222,7 @@
     loadScenes()
     loadZones()
     loadFavorites()
+    loadThemes()
   })
 
   // Buckets scenes under the zone they belong to. Scenes tied to a Room, an
@@ -510,15 +552,41 @@
       <h1>Hue Light Control</h1>
       <p class="subtitle">Bulbs and scenes on your local Hue bridge</p>
     </div>
-    <div class="palette-toggle" role="group" aria-label="Color palette">
-      <button type="button" class:active={palette === 'warm'} onclick={() => (palette = 'warm')}>
-        Warm
-      </button>
-      <button type="button" class:active={palette === 'cool'} onclick={() => (palette = 'cool')}>
-        Cool
-      </button>
+    <div class="theme-picker">
+      <label>
+        <span class="sr-only">Theme</span>
+        <select bind:value={themeId} aria-label="Theme">
+          {#each builtInThemes as theme (theme.id)}
+            <option value={theme.id}>{theme.name}</option>
+          {/each}
+          {#if customThemes.length > 0}
+            <optgroup label="Imported">
+              {#each customThemes as theme (theme.id)}
+                <option value={theme.id}>{theme.name}</option>
+              {/each}
+            </optgroup>
+          {/if}
+        </select>
+      </label>
+      {#if customThemes.some((t) => t.id === themeId)}
+        <button type="button" onclick={() => deleteTheme(themeId)} aria-label="Delete current theme">
+          Delete
+        </button>
+      {/if}
+      <button type="button" onclick={() => (importThemeFormOpen = true)}>+ Import</button>
     </div>
   </div>
+
+  {#if themesError}
+    <p class="error">
+      Couldn't load imported themes ({themesError}).
+      <button onclick={loadThemes}>Retry</button>
+    </p>
+  {/if}
+
+  {#if importThemeFormOpen}
+    <ImportThemeForm onImport={importTheme} onClose={() => (importThemeFormOpen = false)} />
+  {/if}
 
   <div class="layout">
     <aside class="bulbs-panel" class:collapsed={bulbsCollapsed}>
@@ -672,35 +740,47 @@
     font-size: 0.95rem;
   }
 
-  .palette-toggle {
+  .sr-only {
+    position: absolute;
+    width: 1px;
+    height: 1px;
+    overflow: hidden;
+    clip: rect(0, 0, 0, 0);
+    white-space: nowrap;
+  }
+
+  .theme-picker {
     display: flex;
-    border: 1px solid var(--border);
-    border-radius: 999px;
-    background: var(--surface-alt);
-    padding: 0.2rem;
+    align-items: center;
+    gap: 0.5rem;
     flex-shrink: 0;
   }
 
-  .palette-toggle button {
+  .theme-picker select {
+    font: inherit;
+    font-size: 0.85rem;
+    padding: 0.35rem 0.6rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: inherit;
+  }
+
+  .theme-picker button {
     font: inherit;
     font-size: 0.85rem;
     font-weight: 600;
     padding: 0.35rem 0.9rem;
-    border-radius: 999px;
-    border: none;
-    background: none;
-    color: var(--text-muted);
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: inherit;
     cursor: pointer;
-    transition: background-color 0.15s ease, color 0.15s ease;
+    transition: filter 0.15s ease;
   }
 
-  .palette-toggle button.active {
-    background: var(--accent);
-    color: var(--accent-text);
-  }
-
-  .palette-toggle button:not(.active):hover {
-    color: var(--text);
+  .theme-picker button:hover {
+    filter: brightness(0.95);
   }
 
   .layout {
@@ -757,7 +837,7 @@
     width: 1.75rem;
     height: 1.75rem;
     padding: 0;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border);
     background: var(--surface-alt);
     color: inherit;
@@ -796,7 +876,7 @@
     font-size: 0.85rem;
     font-weight: 600;
     padding: 0.4rem 0.9rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border);
     background: var(--surface-alt);
     color: inherit;
@@ -816,7 +896,7 @@
 
   .zone-group {
     border: 1px solid var(--border);
-    border-radius: 1rem;
+    border-radius: var(--radius-lg);
     background: var(--surface-alt);
     padding: 1.25rem;
   }

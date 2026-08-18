@@ -39,7 +39,7 @@
 <style>
   dialog {
     border: 1px solid var(--border);
-    border-radius: 0.75rem;
+    border-radius: var(--radius-md);
     padding: 1.25rem;
     background: var(--surface);
     color: inherit;

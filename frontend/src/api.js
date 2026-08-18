@@ -30,3 +30,7 @@ export function putJson(url, body) {
 export function postJson(url, body) {
   return fetchJson(url, { method: 'POST', body })
 }
+
+export function deleteJson(url) {
+  return fetchJson(url, { method: 'DELETE' })
+}
