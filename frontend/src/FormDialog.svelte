@@ -38,10 +38,10 @@
 
 <style>
   dialog {
-    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
+    border: 1px solid var(--border);
     border-radius: 0.75rem;
     padding: 1.25rem;
-    background: light-dark(#fff, #1e1e1e);
+    background: var(--surface);
     color: inherit;
     width: min(24rem, 90vw);
     box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);

@@ -106,24 +106,24 @@
 
 <style>
   .card {
-    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
+    border: 1px solid var(--border);
     border-radius: 0.75rem;
     padding: 1rem;
     display: flex;
     flex-direction: column;
     gap: 0.6rem;
-    background: light-dark(#fff, #1e1e1e);
-    box-shadow: 0 1px 2px light-dark(rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.2));
-    transition: box-shadow 0.15s ease;
+    background: var(--surface);
+    box-shadow: 0 1px 2px var(--shadow-color);
+    transition: box-shadow 0.15s ease, background-color 0.2s ease, border-color 0.2s ease;
     cursor: pointer;
   }
 
   .card:hover {
-    box-shadow: 0 2px 8px light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.3));
+    box-shadow: 0 2px 8px var(--shadow-color);
   }
 
   .card:focus-visible {
-    outline: 2px solid light-dark(#1c7a2e, #7fe396);
+    outline: 2px solid var(--accent);
     outline-offset: 2px;
   }
 
@@ -145,8 +145,8 @@
     width: 1.25rem;
     height: 1.25rem;
     border-radius: 50%;
-    border: 1px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.25));
-    background: light-dark(#e2e2e2, #2a2a2a);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
     flex-shrink: 0;
     cursor: default;
     transition: box-shadow 0.2s ease, background-color 0.2s ease;
@@ -161,7 +161,7 @@
   .color-input {
     width: 100%;
     height: 1.75rem;
-    border: 1px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.25));
+    border: 1px solid var(--border);
     border-radius: 0.4rem;
     padding: 0;
     background: none;
@@ -185,15 +185,15 @@
     font-size: 0.75rem;
     padding: 0.15rem 0.5rem;
     border-radius: 999px;
-    background: light-dark(#eee, #333);
-    color: light-dark(#555, #ccc);
+    background: var(--surface-alt);
+    color: var(--text-muted);
     width: fit-content;
     transition: background-color 0.15s ease, color 0.15s ease;
   }
 
   .unreachable-badge,
   .error-badge {
-    background: light-dark(#fbe3e0, #3d211f);
-    color: light-dark(#a3392c, #f0958a);
+    background: var(--error-bg);
+    color: var(--error-text);
   }
 </style>
