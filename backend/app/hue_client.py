@@ -70,7 +70,7 @@ class Zone(BaseModel):
     light_ids: list[str] = []
 
 
-# Standard Hue mired range (154 mired/~6500K "coolest" to 500 mired/2000K
+# Standard Hue mired range (153 mired/~6500K "coolest" to 500 mired/2000K
 # "warmest"), confirmed against this app's bulbs (see docs/hue-bridge-catalog.md).
 # Used both to render a 0-100 color_temp_pct for the UI and to convert a
 # slider position back to mired on write.
@@ -121,7 +121,11 @@ def _hex_to_xy(hex_color: str) -> tuple[float, float]:
 
     total = X + Y + Z
     if total <= 0:
-        return (0.0, 0.0)
+        # Black has no hue — (0, 0) isn't on the valid xy locus (y=0 is
+        # physically meaningless) and produces undefined bridge behavior.
+        # Fall back to the D65 white point instead of sending a degenerate
+        # coordinate.
+        return (0.3127, 0.3290)
     return (X / total, Y / total)
 
 
@@ -196,6 +200,18 @@ def _light_color(state: dict) -> Optional[str]:
     return None
 
 
+def _light_color_temp_pct(state: dict) -> Optional[int]:
+    try:
+        if "ct" in state:
+            return _mired_to_ct_pct(state["ct"])
+    except Exception:
+        # Same reasoning as _light_color: a malformed ct value on one bulb
+        # shouldn't take down the whole /api/lights response.
+        logger.warning("Could not compute color_temp_pct for light state %r", state, exc_info=True)
+        return None
+    return None
+
+
 def _bri_to_pct(bri: int) -> int:
     return round(bri / 254 * 100)
 
@@ -218,7 +234,7 @@ def _to_light(light_id: str, raw: dict) -> Light:
         on=state.get("on", False),
         brightness_pct=_bri_to_pct(state.get("bri", 0)),
         color=_light_color(state),
-        color_temp_pct=_mired_to_ct_pct(state["ct"]) if "ct" in state else None,
+        color_temp_pct=_light_color_temp_pct(state),
         supports_color=supports_color,
         supports_color_temp=supports_color_temp,
         reachable=state.get("reachable", False),

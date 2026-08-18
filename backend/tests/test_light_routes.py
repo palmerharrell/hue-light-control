@@ -124,6 +124,23 @@ async def test_set_light_color_temp(client):
     assert json.loads(state_route.calls.last.request.content) == {"ct": 326}
 
 
+@respx.mock
+async def test_set_light_color_black_sends_white_point_not_degenerate_xy(client):
+    # #000000 has no hue — _hex_to_xy must not send an off-locus (0, 0) that
+    # produces undefined bridge behavior.
+    state_route = respx.put(f"{BRIDGE_URL}/lights/1/state").mock(
+        return_value=Response(200, json=[{"success": {"/lights/1/state/xy": [0.3127, 0.329]}}])
+    )
+
+    resp = await client.put("/api/lights/1/state", json={"color": "#000000"})
+
+    assert resp.status_code == 200
+    body = json.loads(state_route.calls.last.request.content)
+    x, y = body["xy"]
+    assert x == pytest.approx(0.3127, abs=1e-4)
+    assert y == pytest.approx(0.3290, abs=1e-4)
+
+
 async def test_set_light_state_invalid_color_is_422(client):
     resp = await client.put("/api/lights/1/state", json={"color": "not-a-color"})
 

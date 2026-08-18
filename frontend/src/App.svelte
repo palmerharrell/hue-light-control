@@ -304,6 +304,12 @@
     light.toggleError = null
     try {
       await putJson(`/api/lights/${lightId}/state`, { color_temp_pct: pct, on: true })
+      // Unlike setLightBrightness/setLightColor, the optimistic update above
+      // only sets color_temp_pct — it can't also approximate the header
+      // swatch's `color` (rendered from whatever colormode the bulb reports),
+      // so that would otherwise sit stale until some other action happens to
+      // refresh `lights`. Refetch to pick up the bridge's recomputed color.
+      await refreshLights()
     } catch (err) {
       if (latestColorTempRequest.get(lightId) === token) {
         Object.assign(light, prev)

@@ -76,6 +76,34 @@ async def test_list_lights_exposes_capabilities_per_type(client):
 
 
 @respx.mock
+async def test_list_lights_malformed_ct_does_not_500_whole_response(client):
+    respx.get(f"{BRIDGE_URL}/lights").mock(
+        return_value=Response(
+            200,
+            json={
+                "1": {
+                    "name": "Malformed ct",
+                    "type": "Color temperature light",
+                    "state": {"on": True, "bri": 254, "ct": None, "reachable": True},
+                },
+                "2": {
+                    "name": "Fine",
+                    "type": "Color temperature light",
+                    "state": {"on": True, "bri": 254, "ct": 300, "colormode": "ct", "reachable": True},
+                },
+            },
+        )
+    )
+
+    resp = await client.get("/api/lights")
+
+    assert resp.status_code == 200
+    by_id = {light["id"]: light for light in resp.json()}
+    assert by_id["1"]["color_temp_pct"] is None
+    assert by_id["2"]["color_temp_pct"] is not None
+
+
+@respx.mock
 async def test_list_scenes(client):
     respx.get(f"{BRIDGE_URL}/scenes").mock(
         return_value=Response(
