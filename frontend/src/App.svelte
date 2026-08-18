@@ -19,10 +19,25 @@
   let zonesError = $state(null)
 
   // Persisted so the panel stays collapsed/expanded across reloads rather
-  // than resetting every time the app is opened.
-  let bulbsCollapsed = $state(localStorage.getItem('bulbsCollapsed') === 'true')
+  // than resetting every time the app is opened. localStorage access is
+  // wrapped in try/catch since it can throw in restrictive browser
+  // configurations (e.g. Safari with all cookies/storage blocked) — that
+  // should just fall back to non-persisted state, not crash the app.
+  function readBulbsCollapsed() {
+    try {
+      return localStorage.getItem('bulbsCollapsed') === 'true'
+    } catch {
+      return false
+    }
+  }
+
+  let bulbsCollapsed = $state(readBulbsCollapsed())
   $effect(() => {
-    localStorage.setItem('bulbsCollapsed', bulbsCollapsed)
+    try {
+      localStorage.setItem('bulbsCollapsed', bulbsCollapsed)
+    } catch {
+      // Ignore — persistence is a nice-to-have, not required for the panel to work.
+    }
   })
 
   async function loadLights() {
