@@ -7,7 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.config import load_config
+from app.config import load_config, update_favorite_scene_ids
 from app.hue_client import (
     BridgeNotConfigured,
     BridgeUnreachable,
@@ -179,6 +179,24 @@ async def stop_scene_route(scene_id: str):
 async def set_scene_speed_route(scene_id: str, body: SceneSpeedRequest):
     config = load_config()
     await set_scene_speed(config, scene_id, body.speed)
+    return {"status": "ok"}
+
+
+class FavoritesUpdate(BaseModel):
+    scene_ids: list[str]
+
+
+@app.get("/api/favorites")
+def list_favorites() -> list[str]:
+    # Local UI preference, not bridge data — works even when the bridge
+    # isn't configured, unlike the scene/zone/light routes.
+    config = load_config()
+    return config.favorite_scene_ids
+
+
+@app.put("/api/favorites")
+def update_favorites(body: FavoritesUpdate):
+    update_favorite_scene_ids(body.scene_ids)
     return {"status": "ok"}
 
 
