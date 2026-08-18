@@ -7,7 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.config import Theme, add_custom_theme, load_config, remove_custom_theme, update_favorite_scene_ids
+from app.config import (
+    DuplicateThemeError,
+    Theme,
+    add_custom_theme,
+    load_config,
+    remove_custom_theme,
+    update_favorite_scene_ids,
+)
 from app.hue_client import (
     BridgeNotConfigured,
     BridgeUnreachable,
@@ -227,10 +234,10 @@ def list_custom_themes() -> list[Theme]:
 def import_theme(theme: Theme):
     if not theme.tokens:
         raise HTTPException(status_code=400, detail="theme must define at least one token")
-    config = load_config()
-    if any(t.id == theme.id for t in config.custom_themes):
+    try:
+        add_custom_theme(theme)
+    except DuplicateThemeError:
         raise HTTPException(status_code=409, detail=f"theme id '{theme.id}' already imported")
-    add_custom_theme(theme)
     return theme
 
 

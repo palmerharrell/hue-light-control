@@ -115,10 +115,26 @@
   // Only ever offered for a custom (imported) theme — see the template,
   // built-in themes have no delete control. Falls back to the default
   // theme if the one just deleted was active.
+  //
+  // Guarded against overlapping double-click requests and surfaces a
+  // failure via themesError, same pattern as SceneCard's removeFavorite
+  // (removePending/removeError) — otherwise a double-click's second DELETE
+  // 404s (the first already removed it) and fails silently.
+  let deletingThemeId = $state(null)
+
   async function deleteTheme(id) {
-    await deleteJson(`/api/themes/${id}`)
-    customThemes = customThemes.filter((t) => t.id !== id)
-    if (themeId === id) themeId = DEFAULT_THEME_ID
+    if (deletingThemeId) return
+    deletingThemeId = id
+    themesError = null
+    try {
+      await deleteJson(`/api/themes/${id}`)
+      customThemes = customThemes.filter((t) => t.id !== id)
+      if (themeId === id) themeId = DEFAULT_THEME_ID
+    } catch (err) {
+      themesError = err.message
+    } finally {
+      deletingThemeId = null
+    }
   }
 
   async function loadLights() {
@@ -569,7 +585,12 @@
         </select>
       </label>
       {#if customThemes.some((t) => t.id === themeId)}
-        <button type="button" onclick={() => deleteTheme(themeId)} aria-label="Delete current theme">
+        <button
+          type="button"
+          onclick={() => deleteTheme(themeId)}
+          disabled={deletingThemeId === themeId}
+          aria-label="Delete current theme"
+        >
           Delete
         </button>
       {/if}

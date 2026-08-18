@@ -56,8 +56,12 @@ async def test_import_theme_empty_tokens_is_400(client):
 
 
 async def test_import_theme_duplicate_id_is_409(client, monkeypatch):
+    # add_custom_theme does its own duplicate check internally (against a
+    # lock, to close a check-then-write race — see config.py), using
+    # app.config's load_config rather than main's, so that's what needs
+    # patching here rather than app.main.load_config.
     monkeypatch.setattr(
-        "app.main.load_config",
+        "app.config.load_config",
         lambda: BridgeConfig(custom_themes=[Theme(id="t1", name="Existing", tokens={"--bg": "#000"})]),
     )
 

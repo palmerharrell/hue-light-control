@@ -1,5 +1,6 @@
 import os
 import tempfile
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -7,6 +8,18 @@ import yaml
 from pydantic import BaseModel
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+
+# Serializes add_custom_theme's check-then-write against itself — FastAPI's
+# sync routes run in a threadpool, so two concurrent imports could otherwise
+# both read config.yaml before either writes, both pass a duplicate-id
+# check done outside this lock, and the second write would silently clobber
+# the first (each import_theme caller still getting a 201) rather than one
+# of them getting the intended 409.
+_themes_lock = threading.Lock()
+
+
+class DuplicateThemeError(Exception):
+    pass
 
 
 class Theme(BaseModel):
@@ -68,9 +81,12 @@ def update_favorite_scene_ids(scene_ids: list[str]) -> None:
 
 
 def add_custom_theme(theme: Theme) -> None:
-    config = load_config()
-    config.custom_themes = [t for t in config.custom_themes if t.id != theme.id] + [theme]
-    _write_config(config)
+    with _themes_lock:
+        config = load_config()
+        if any(t.id == theme.id for t in config.custom_themes):
+            raise DuplicateThemeError(theme.id)
+        config.custom_themes = [*config.custom_themes, theme]
+        _write_config(config)
 
 
 def remove_custom_theme(theme_id: str) -> None:
