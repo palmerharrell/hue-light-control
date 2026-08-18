@@ -68,14 +68,28 @@ class LightStateUpdate(BaseModel):
     # 0 isn't a settable target (that's what on: false is for) — matches
     # _pct_to_bri's floor of 1.
     brightness_pct: Optional[int] = Field(default=None, ge=1, le=100)
+    # sRGB hex, e.g. "#ff8800" — converted to the bridge's xy color space in
+    # set_light_state. Only meaningful for a light with supports_color=true;
+    # the bridge itself rejects xy on a color-temp-only or dimmable bulb, so
+    # that rejection is left to surface as a normal 502 rather than
+    # duplicated here.
+    color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
+    color_temp_pct: Optional[int] = Field(default=None, ge=0, le=100)
 
 
 @app.put("/api/lights/{light_id}/state")
 async def update_light_state(light_id: str, update: LightStateUpdate):
-    if update.on is None and update.brightness_pct is None:
-        raise HTTPException(status_code=400, detail="must set on and/or brightness_pct")
+    if update.on is None and update.brightness_pct is None and update.color is None and update.color_temp_pct is None:
+        raise HTTPException(status_code=400, detail="must set on, brightness_pct, color, and/or color_temp_pct")
     config = load_config()
-    await set_light_state(config, light_id, on=update.on, brightness_pct=update.brightness_pct)
+    await set_light_state(
+        config,
+        light_id,
+        on=update.on,
+        brightness_pct=update.brightness_pct,
+        color=update.color,
+        color_temp_pct=update.color_temp_pct,
+    )
     return {"status": "ok"}
 
 

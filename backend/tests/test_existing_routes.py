@@ -31,9 +31,76 @@ async def test_list_lights(client):
             "on": True,
             "brightness_pct": 100,
             "color": None,
+            "color_temp_pct": None,
+            "supports_color": False,
+            "supports_color_temp": False,
             "reachable": True,
         }
     ]
+
+
+@respx.mock
+async def test_list_lights_exposes_capabilities_per_type(client):
+    respx.get(f"{BRIDGE_URL}/lights").mock(
+        return_value=Response(
+            200,
+            json={
+                "1": {
+                    "name": "Dimmable",
+                    "type": "Dimmable light",
+                    "state": {"on": True, "bri": 254, "reachable": True},
+                },
+                "2": {
+                    "name": "CT only",
+                    "type": "Color temperature light",
+                    "state": {"on": True, "bri": 254, "ct": 300, "colormode": "ct", "reachable": True},
+                },
+                "3": {
+                    "name": "Full color",
+                    "type": "Extended color light",
+                    "state": {"on": True, "bri": 254, "ct": 200, "colormode": "ct", "reachable": True},
+                },
+            },
+        )
+    )
+
+    resp = await client.get("/api/lights")
+
+    assert resp.status_code == 200
+    by_id = {light["id"]: light for light in resp.json()}
+    assert (by_id["1"]["supports_color"], by_id["1"]["supports_color_temp"]) == (False, False)
+    assert (by_id["2"]["supports_color"], by_id["2"]["supports_color_temp"]) == (False, True)
+    assert (by_id["3"]["supports_color"], by_id["3"]["supports_color_temp"]) == (True, True)
+    assert by_id["2"]["color_temp_pct"] is not None
+    assert by_id["1"]["color_temp_pct"] is None
+
+
+@respx.mock
+async def test_list_lights_malformed_ct_does_not_500_whole_response(client):
+    respx.get(f"{BRIDGE_URL}/lights").mock(
+        return_value=Response(
+            200,
+            json={
+                "1": {
+                    "name": "Malformed ct",
+                    "type": "Color temperature light",
+                    "state": {"on": True, "bri": 254, "ct": None, "reachable": True},
+                },
+                "2": {
+                    "name": "Fine",
+                    "type": "Color temperature light",
+                    "state": {"on": True, "bri": 254, "ct": 300, "colormode": "ct", "reachable": True},
+                },
+            },
+        )
+    )
+
+    resp = await client.get("/api/lights")
+
+    assert resp.status_code == 200
+    by_id = {light["id"]: light for light in resp.json()}
+    assert by_id["1"]["color_temp_pct"] is None
+    assert by_id["2"]["color_temp_pct"] is not None
 
 
 @respx.mock
