@@ -281,16 +281,36 @@
   // footer button — same one-dialog-at-a-time shape as createFormZone).
   let addFavoriteFormOpen = $state(false)
 
+  // addFavorites/removeFavorite can be triggered from independent controls
+  // (the Add dialog, and a remove button on each favorited SceneCard) that
+  // don't share an in-flight guard the way a single control's own
+  // pending/submitting flag would. Without serializing, two overlapping
+  // calls would each compute `updated` from the same stale favoriteSceneIds
+  // snapshot, and whichever PUT resolves last would silently overwrite the
+  // other's change (both locally and in the persisted config.yaml). Queuing
+  // every mutation onto one promise chain ensures each only runs (and reads
+  // favoriteSceneIds) after the previous one has fully applied.
+  let favoritesQueue = Promise.resolve()
+
+  function queueFavoritesUpdate(computeUpdated) {
+    const run = favoritesQueue.then(async () => {
+      const updated = computeUpdated(favoriteSceneIds)
+      await putJson('/api/favorites', { scene_ids: updated })
+      favoriteSceneIds = updated
+    })
+    // Keep the chain alive even after a failed update — the caller below
+    // still sees the rejection via `run`, but the *next* queued mutation
+    // shouldn't be blocked forever by an earlier one's error.
+    favoritesQueue = run.catch(() => {})
+    return run
+  }
+
   async function addFavorites(sceneIds) {
-    const updated = [...new Set([...favoriteSceneIds, ...sceneIds])]
-    await putJson('/api/favorites', { scene_ids: updated })
-    favoriteSceneIds = updated
+    await queueFavoritesUpdate((current) => [...new Set([...current, ...sceneIds])])
   }
 
   async function removeFavorite(sceneId) {
-    const updated = favoriteSceneIds.filter((id) => id !== sceneId)
-    await putJson('/api/favorites', { scene_ids: updated })
-    favoriteSceneIds = updated
+    await queueFavoritesUpdate((current) => current.filter((id) => id !== sceneId))
   }
 
   // Unlike toggleLight, there's no meaningful "prior value" to optimistically
