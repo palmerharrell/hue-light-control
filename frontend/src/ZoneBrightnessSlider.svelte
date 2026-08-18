@@ -89,7 +89,7 @@
   .badge {
     font-size: 0.75rem;
     padding: 0.15rem 0.5rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     width: fit-content;
     flex-shrink: 0;
   }
@@ -104,7 +104,7 @@
     font-size: 0.85rem;
     font-weight: 600;
     padding: 0.4rem 0.9rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     border: 1px solid var(--border);
     background: var(--surface-alt);
     cursor: pointer;

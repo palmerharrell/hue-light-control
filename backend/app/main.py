@@ -7,7 +7,14 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from app.config import load_config, update_favorite_scene_ids
+from app.config import (
+    DuplicateThemeError,
+    Theme,
+    add_custom_theme,
+    load_config,
+    remove_custom_theme,
+    update_favorite_scene_ids,
+)
 from app.hue_client import (
     BridgeNotConfigured,
     BridgeUnreachable,
@@ -211,6 +218,35 @@ def list_favorites() -> list[str]:
 @app.put("/api/favorites")
 def update_favorites(body: FavoritesUpdate):
     update_favorite_scene_ids(body.scene_ids)
+    return {"status": "ok"}
+
+
+@app.get("/api/themes")
+def list_custom_themes() -> list[Theme]:
+    # Only user-imported themes (issue #21) — the built-in "Default - Dark"
+    # / "Default - Light" themes are frontend code, same split as
+    # favorites/scenes above (local preference vs. bridge/app data).
+    config = load_config()
+    return config.custom_themes
+
+
+@app.post("/api/themes", status_code=201)
+def import_theme(theme: Theme):
+    if not theme.tokens:
+        raise HTTPException(status_code=400, detail="theme must define at least one token")
+    try:
+        add_custom_theme(theme)
+    except DuplicateThemeError:
+        raise HTTPException(status_code=409, detail=f"theme id '{theme.id}' already imported")
+    return theme
+
+
+@app.delete("/api/themes/{theme_id}")
+def delete_custom_theme(theme_id: str):
+    config = load_config()
+    if not any(t.id == theme_id for t in config.custom_themes):
+        raise HTTPException(status_code=404, detail="theme not found")
+    remove_custom_theme(theme_id)
     return {"status": "ok"}
 
 

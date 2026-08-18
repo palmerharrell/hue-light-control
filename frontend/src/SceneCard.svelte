@@ -168,7 +168,7 @@
 <style>
   .card {
     border: 1px solid var(--border);
-    border-radius: 0.75rem;
+    border-radius: var(--radius-md);
     display: flex;
     flex-direction: column;
     background: var(--surface);
@@ -300,7 +300,7 @@
   .badge {
     font-size: 0.75rem;
     padding: 0.15rem 0.5rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--surface-alt);
     color: var(--text-muted);
     width: fit-content;

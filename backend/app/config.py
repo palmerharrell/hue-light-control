@@ -1,5 +1,6 @@
 import os
 import tempfile
+import threading
 from pathlib import Path
 from typing import Optional
 
@@ -7,6 +8,29 @@ import yaml
 from pydantic import BaseModel
 
 CONFIG_PATH = Path(__file__).resolve().parent.parent / "config.yaml"
+
+# Serializes add_custom_theme's check-then-write against itself — FastAPI's
+# sync routes run in a threadpool, so two concurrent imports could otherwise
+# both read config.yaml before either writes, both pass a duplicate-id
+# check done outside this lock, and the second write would silently clobber
+# the first (each import_theme caller still getting a 201) rather than one
+# of them getting the intended 409.
+_themes_lock = threading.Lock()
+
+
+class DuplicateThemeError(Exception):
+    pass
+
+
+class Theme(BaseModel):
+    id: str
+    name: str
+    # Flat map of CSS custom-property name (e.g. "--bg") to value. Stored
+    # opaquely — the backend doesn't know or care which properties the
+    # frontend's stylesheet actually reads, so a theme can introduce new
+    # tokens (e.g. for a future LCARS/Wipeout theme, issues #43/#42) without
+    # backend changes.
+    tokens: dict[str, str]
 
 
 class BridgeConfig(BaseModel):
@@ -16,6 +40,10 @@ class BridgeConfig(BaseModel):
     # data, so it lives alongside bridge_ip/api_key in the same local config
     # rather than requiring a separate store.
     favorite_scene_ids: list[str] = []
+    # User-imported themes (issue #21). The built-in "Default - Dark" /
+    # "Default - Light" themes ship as frontend code, not here — this only
+    # holds themes imported at runtime via POST /api/themes.
+    custom_themes: list[Theme] = []
 
 
 def load_config() -> BridgeConfig:
@@ -49,4 +77,19 @@ def update_bridge_ip(ip: str) -> None:
 def update_favorite_scene_ids(scene_ids: list[str]) -> None:
     config = load_config()
     config.favorite_scene_ids = scene_ids
+    _write_config(config)
+
+
+def add_custom_theme(theme: Theme) -> None:
+    with _themes_lock:
+        config = load_config()
+        if any(t.id == theme.id for t in config.custom_themes):
+            raise DuplicateThemeError(theme.id)
+        config.custom_themes = [*config.custom_themes, theme]
+        _write_config(config)
+
+
+def remove_custom_theme(theme_id: str) -> None:
+    config = load_config()
+    config.custom_themes = [t for t in config.custom_themes if t.id != theme_id]
     _write_config(config)

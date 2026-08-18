@@ -34,7 +34,7 @@
     appearance: none;
     -webkit-appearance: none;
     height: 0.4rem;
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     background: var(--surface-alt);
     outline: none;
   }
@@ -64,7 +64,7 @@
 
   input[type='range']::-moz-range-progress {
     background: var(--accent);
-    border-radius: 999px;
+    border-radius: var(--radius-pill);
     height: 0.4rem;
   }
 
