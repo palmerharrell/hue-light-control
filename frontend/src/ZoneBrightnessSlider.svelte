@@ -95,8 +95,8 @@
   }
 
   .error-badge {
-    background: light-dark(#fbe3e0, #3d211f);
-    color: light-dark(#a3392c, #f0958a);
+    background: var(--error-bg);
+    color: var(--error-text);
   }
 
   .zone-off-button {
@@ -105,8 +105,8 @@
     font-weight: 600;
     padding: 0.4rem 0.9rem;
     border-radius: 999px;
-    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
-    background: light-dark(#eee, #333);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
     cursor: pointer;
     flex-shrink: 0;
   }

@@ -57,6 +57,29 @@
     }
   })
 
+  // Warm/cool color palette (issue #20), persisted the same way as
+  // bulbsCollapsed. Applied via a data-palette attribute on <html> rather
+  // than scoped to this component, since app.css's palette tokens (and the
+  // global .dialog-form rules) need it to cascade to the whole page,
+  // including dialogs mounted outside <main>.
+  function readPalette() {
+    try {
+      return localStorage.getItem('palette') === 'cool' ? 'cool' : 'warm'
+    } catch {
+      return 'warm'
+    }
+  }
+
+  let palette = $state(readPalette())
+  $effect(() => {
+    document.documentElement.dataset.palette = palette
+    try {
+      localStorage.setItem('palette', palette)
+    } catch {
+      // Ignore — persistence is a nice-to-have, not required for the toggle to work.
+    }
+  })
+
   async function loadLights() {
     lightsLoading = true
     lightsError = null
@@ -482,8 +505,20 @@
 </script>
 
 <main>
-  <h1>Hue Light Control</h1>
-  <p class="subtitle">Bulbs and scenes on your local Hue bridge</p>
+  <div class="page-header">
+    <div>
+      <h1>Hue Light Control</h1>
+      <p class="subtitle">Bulbs and scenes on your local Hue bridge</p>
+    </div>
+    <div class="palette-toggle" role="group" aria-label="Color palette">
+      <button type="button" class:active={palette === 'warm'} onclick={() => (palette = 'warm')}>
+        Warm
+      </button>
+      <button type="button" class:active={palette === 'cool'} onclick={() => (palette = 'cool')}>
+        Cool
+      </button>
+    </div>
+  </div>
 
   <div class="layout">
     <aside class="bulbs-panel" class:collapsed={bulbsCollapsed}>
@@ -617,6 +652,14 @@
 </main>
 
 <style>
+  .page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    flex-wrap: wrap;
+  }
+
   h1 {
     margin: 0;
     font-size: 1.75rem;
@@ -625,8 +668,39 @@
 
   .subtitle {
     margin: 0.3rem 0 0;
-    color: light-dark(#666, #999);
+    color: var(--text-muted);
     font-size: 0.95rem;
+  }
+
+  .palette-toggle {
+    display: flex;
+    border: 1px solid var(--border);
+    border-radius: 999px;
+    background: var(--surface-alt);
+    padding: 0.2rem;
+    flex-shrink: 0;
+  }
+
+  .palette-toggle button {
+    font: inherit;
+    font-size: 0.85rem;
+    font-weight: 600;
+    padding: 0.35rem 0.9rem;
+    border-radius: 999px;
+    border: none;
+    background: none;
+    color: var(--text-muted);
+    cursor: pointer;
+    transition: background-color 0.15s ease, color 0.15s ease;
+  }
+
+  .palette-toggle button.active {
+    background: var(--accent);
+    color: var(--accent-text);
+  }
+
+  .palette-toggle button:not(.active):hover {
+    color: var(--text);
   }
 
   .layout {
@@ -684,8 +758,8 @@
     height: 1.75rem;
     padding: 0;
     border-radius: 999px;
-    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
-    background: light-dark(#eee, #333);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
     color: inherit;
     cursor: pointer;
     transition: filter 0.15s ease;
@@ -723,8 +797,8 @@
     font-weight: 600;
     padding: 0.4rem 0.9rem;
     border-radius: 999px;
-    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
-    background: light-dark(#eee, #333);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
     color: inherit;
     cursor: pointer;
     transition: filter 0.15s ease;
@@ -741,9 +815,9 @@
   }
 
   .zone-group {
-    border: 1px solid light-dark(#dedede, #333);
+    border: 1px solid var(--border);
     border-radius: 1rem;
-    background: light-dark(#ebebe9, #1a1a1a);
+    background: var(--surface-alt);
     padding: 1.25rem;
   }
 
@@ -762,7 +836,7 @@
     margin: 0;
     font-size: 0.95rem;
     font-weight: 600;
-    color: light-dark(#555, #aaa);
+    color: var(--text-muted);
     flex-shrink: 0;
   }
 
@@ -774,11 +848,11 @@
 
   .hint {
     font-size: 0.85rem;
-    color: light-dark(#666, #999);
+    color: var(--text-muted);
     margin: 0;
   }
 
   .error {
-    color: light-dark(#a3392c, #f0958a);
+    color: var(--error-text);
   }
 </style>

@@ -167,18 +167,18 @@
 
 <style>
   .card {
-    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
+    border: 1px solid var(--border);
     border-radius: 0.75rem;
     display: flex;
     flex-direction: column;
-    background: light-dark(#fff, #1e1e1e);
+    background: var(--surface);
     width: 100%;
-    box-shadow: 0 1px 2px light-dark(rgba(0, 0, 0, 0.04), rgba(0, 0, 0, 0.2));
-    transition: box-shadow 0.15s ease;
+    box-shadow: 0 1px 2px var(--shadow-color);
+    transition: box-shadow 0.15s ease, background-color 0.2s ease, border-color 0.2s ease;
   }
 
   .card:not(.inactive):hover {
-    box-shadow: 0 2px 8px light-dark(rgba(0, 0, 0, 0.08), rgba(0, 0, 0, 0.3));
+    box-shadow: 0 2px 8px var(--shadow-color);
   }
 
   .card.inactive {
@@ -210,7 +210,7 @@
   }
 
   .activate:focus-visible {
-    outline: 2px solid light-dark(#1c7a2e, #7fe396);
+    outline: 2px solid var(--accent);
     outline-offset: -2px;
   }
 
@@ -242,8 +242,8 @@
     width: 1.75rem;
     height: 1.75rem;
     border-radius: 50%;
-    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
-    background: light-dark(#f4f4f4, #2a2a2a);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
     font-size: 0.7rem;
     line-height: 1;
     display: flex;
@@ -255,7 +255,7 @@
 
   .remove-favorite:hover:not(:disabled) {
     filter: brightness(0.95);
-    color: light-dark(#a3392c, #f0958a);
+    color: var(--error-text);
   }
 
   .remove-favorite:disabled {
@@ -268,8 +268,8 @@
     width: 1.75rem;
     height: 1.75rem;
     border-radius: 50%;
-    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
-    background: light-dark(#f4f4f4, #2a2a2a);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
     font-size: 0.75rem;
     line-height: 1;
     display: flex;
@@ -289,8 +289,8 @@
   }
 
   .play-toggle.playing {
-    background: light-dark(#dff0e0, #1f3a26);
-    border-color: light-dark(#9fd6a8, #2f5a3b);
+    background: var(--accent-soft-bg);
+    border-color: var(--accent-soft-border);
   }
 
   .speed-row {
@@ -301,13 +301,13 @@
     font-size: 0.75rem;
     padding: 0.15rem 0.5rem;
     border-radius: 999px;
-    background: light-dark(#eee, #333);
-    color: light-dark(#555, #ccc);
+    background: var(--surface-alt);
+    color: var(--text-muted);
     width: fit-content;
   }
 
   .error-badge {
-    background: light-dark(#fbe3e0, #3d211f);
-    color: light-dark(#a3392c, #f0958a);
+    background: var(--error-bg);
+    color: var(--error-text);
   }
 </style>

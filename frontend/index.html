@@ -5,6 +5,16 @@
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Hue Light Control</title>
+    <script>
+      // Set data-palette before first paint so a persisted "cool" choice
+      // doesn't flash the default warm palette on reload — App.svelte's
+      // $effect that normally owns this only runs after mount.
+      try {
+        if (localStorage.getItem('palette') === 'cool') {
+          document.documentElement.dataset.palette = 'cool'
+        }
+      } catch {}
+    </script>
   </head>
   <body>
     <div id="app"></div>

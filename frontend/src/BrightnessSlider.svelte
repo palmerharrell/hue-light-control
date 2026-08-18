@@ -35,7 +35,7 @@
     -webkit-appearance: none;
     height: 0.4rem;
     border-radius: 999px;
-    background: light-dark(#eee, #333);
+    background: var(--surface-alt);
     outline: none;
   }
 
@@ -49,7 +49,7 @@
     width: 0.9rem;
     height: 0.9rem;
     border-radius: 50%;
-    background: light-dark(#333, #ddd);
+    background: var(--accent);
     cursor: pointer;
   }
 
@@ -58,19 +58,19 @@
     height: 0.9rem;
     border: none;
     border-radius: 50%;
-    background: light-dark(#333, #ddd);
+    background: var(--accent);
     cursor: pointer;
   }
 
   input[type='range']::-moz-range-progress {
-    background: light-dark(#333, #ddd);
+    background: var(--accent);
     border-radius: 999px;
     height: 0.4rem;
   }
 
   .brightness-label {
     font-size: 0.75rem;
-    color: light-dark(#666, #aaa);
+    color: var(--text-muted);
     width: 2.5rem;
     text-align: right;
   }
