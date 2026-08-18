@@ -1,5 +1,6 @@
 import json
 
+import pytest
 import respx
 from httpx import Response
 
@@ -93,3 +94,37 @@ async def test_set_light_state_bridge_not_configured_returns_503(client, monkeyp
     resp = await client.put("/api/lights/1/state", json={"on": True})
 
     assert resp.status_code == 503
+
+
+@respx.mock
+async def test_set_light_color(client):
+    state_route = respx.put(f"{BRIDGE_URL}/lights/1/state").mock(
+        return_value=Response(200, json=[{"success": {"/lights/1/state/xy": [0.5, 0.4]}}])
+    )
+
+    resp = await client.put("/api/lights/1/state", json={"color": "#ff0000"})
+
+    assert resp.status_code == 200
+    body = json.loads(state_route.calls.last.request.content)
+    assert list(body.keys()) == ["xy"]
+    x, y = body["xy"]
+    assert x == pytest.approx(0.7006, abs=1e-3)
+    assert y == pytest.approx(0.2993, abs=1e-3)
+
+
+@respx.mock
+async def test_set_light_color_temp(client):
+    state_route = respx.put(f"{BRIDGE_URL}/lights/1/state").mock(
+        return_value=Response(200, json=[{"success": {"/lights/1/state/ct": 326}}])
+    )
+
+    resp = await client.put("/api/lights/1/state", json={"color_temp_pct": 50})
+
+    assert resp.status_code == 200
+    assert json.loads(state_route.calls.last.request.content) == {"ct": 326}
+
+
+async def test_set_light_state_invalid_color_is_422(client):
+    resp = await client.put("/api/lights/1/state", json={"color": "not-a-color"})
+
+    assert resp.status_code == 422

@@ -1,7 +1,7 @@
 <script>
   import BrightnessSlider from './BrightnessSlider.svelte'
 
-  let { light, onToggle, onBrightnessChange } = $props()
+  let { light, onToggle, onBrightnessChange, onColorChange, onColorTempChange } = $props()
 
   // Serializes toggle clicks for this card: while a PUT is in flight the
   // button is disabled, so a fast double-click can't fire a second request
@@ -19,17 +19,20 @@
     }
   }
 
-  // The swatch and brightness slider are their own interactive/decorative
-  // regions, not part of the toggle target — a click that lands in either
-  // (checked via closest, since the slider's range input is what's actually
-  // clicked) shouldn't also toggle the light.
+  // The swatch, brightness slider, color picker, and color-temp slider are
+  // their own interactive/decorative regions, not part of the toggle target
+  // — a click that lands in any of them (checked via closest, since the
+  // actual input elements are what's clicked) shouldn't also toggle the
+  // light.
+  const CONTROL_SELECTOR = '.swatch, .slider-wrap, .color-wrap, .ct-wrap'
+
   function handleCardClick(event) {
-    if (event.target.closest('.swatch, .slider-wrap')) return
+    if (event.target.closest(CONTROL_SELECTOR)) return
     handleToggle()
   }
 
   function handleKeydown(event) {
-    if (event.target.closest('.swatch, .slider-wrap')) return
+    if (event.target.closest(CONTROL_SELECTOR)) return
     if (event.key === 'Enter' || event.key === ' ') {
       event.preventDefault()
       handleToggle()
@@ -74,6 +77,31 @@
       onChange={(pct) => onBrightnessChange(light.id, pct)}
     />
   </div>
+
+  {#if light.supports_color}
+    <div class="color-wrap">
+      <input
+        type="color"
+        class="color-input"
+        value={light.color ?? '#ffe9b3'}
+        aria-label="{light.name} color"
+        onchange={(event) => onColorChange(light.id, event.target.value)}
+      />
+    </div>
+  {/if}
+
+  {#if light.supports_color_temp}
+    <div class="ct-wrap">
+      <BrightnessSlider
+        value={light.color_temp_pct ?? 50}
+        min={0}
+        max={100}
+        showValue={false}
+        label="{light.name} color temperature"
+        onChange={(pct) => onColorTempChange(light.id, pct)}
+      />
+    </div>
+  {/if}
 </div>
 
 <style>
@@ -124,8 +152,24 @@
     transition: box-shadow 0.2s ease, background-color 0.2s ease;
   }
 
-  .slider-wrap {
+  .slider-wrap,
+  .color-wrap,
+  .ct-wrap {
     cursor: default;
+  }
+
+  .color-input {
+    width: 100%;
+    height: 1.75rem;
+    border: 1px solid light-dark(rgba(0, 0, 0, 0.15), rgba(255, 255, 255, 0.25));
+    border-radius: 0.4rem;
+    padding: 0;
+    background: none;
+    cursor: pointer;
+  }
+
+  .ct-wrap :global(input[type='range']) {
+    background: linear-gradient(to right, #ffb347, #cfe8ff);
   }
 
   .name {

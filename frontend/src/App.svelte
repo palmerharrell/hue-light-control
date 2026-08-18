@@ -268,6 +268,50 @@
     }
   }
 
+  // Same optimistic-update-with-revert-if-still-latest pattern as
+  // setLightBrightness, tracked separately so an in-flight color request
+  // isn't stomped by a color-temp request racing it (or vice versa).
+  const latestColorRequest = new Map()
+  const latestColorTempRequest = new Map()
+
+  async function setLightColor(lightId, hex) {
+    const light = lights.find((l) => l.id === lightId)
+    if (!light) return
+    const prev = { on: light.on, color: light.color }
+    const token = Symbol()
+    latestColorRequest.set(lightId, token)
+    light.color = hex
+    light.on = true
+    light.toggleError = null
+    try {
+      await putJson(`/api/lights/${lightId}/state`, { color: hex, on: true })
+    } catch (err) {
+      if (latestColorRequest.get(lightId) === token) {
+        Object.assign(light, prev)
+        light.toggleError = err.message
+      }
+    }
+  }
+
+  async function setLightColorTemp(lightId, pct) {
+    const light = lights.find((l) => l.id === lightId)
+    if (!light) return
+    const prev = { on: light.on, color_temp_pct: light.color_temp_pct }
+    const token = Symbol()
+    latestColorTempRequest.set(lightId, token)
+    light.color_temp_pct = pct
+    light.on = true
+    light.toggleError = null
+    try {
+      await putJson(`/api/lights/${lightId}/state`, { color_temp_pct: pct, on: true })
+    } catch (err) {
+      if (latestColorTempRequest.get(lightId) === token) {
+        Object.assign(light, prev)
+        light.toggleError = err.message
+      }
+    }
+  }
+
   // Which zone's "New Scene" dialog is open, if any (issue #30 — one button
   // per zone rather than a single global one).
   let createFormZone = $state(null)
@@ -459,7 +503,13 @@
         {:else}
           <div class="bulbs-list">
             {#each lights as light (light.id)}
-              <LightCard {light} onToggle={toggleLight} onBrightnessChange={setLightBrightness} />
+              <LightCard
+                {light}
+                onToggle={toggleLight}
+                onBrightnessChange={setLightBrightness}
+                onColorChange={setLightColor}
+                onColorTempChange={setLightColorTemp}
+              />
             {/each}
           </div>
         {/if}

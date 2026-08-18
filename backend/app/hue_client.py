@@ -32,6 +32,16 @@ class Light(BaseModel):
     on: bool
     brightness_pct: int
     color: Optional[str] = None
+    # 0-100, 0=warmest/2000K, 100=coolest/6500K. Present only when the
+    # bulb's last-reported state included a `ct` value — not gated on
+    # supports_color_temp, since a full-color bulb can also report ct
+    # (whichever mode it's currently in).
+    color_temp_pct: Optional[int] = None
+    # Derived from the bridge's `type` string (see _light_capabilities) so
+    # the frontend can hide color/CT controls on bulbs that don't support
+    # them rather than offering a control that will just 502 on write.
+    supports_color: bool = False
+    supports_color_temp: bool = False
     reachable: bool
 
 
@@ -60,8 +70,59 @@ class Zone(BaseModel):
     light_ids: list[str] = []
 
 
+# Standard Hue mired range (154 mired/~6500K "coolest" to 500 mired/2000K
+# "warmest"), confirmed against this app's bulbs (see docs/hue-bridge-catalog.md).
+# Used both to render a 0-100 color_temp_pct for the UI and to convert a
+# slider position back to mired on write.
+MIN_MIRED = 153
+MAX_MIRED = 500
+
+
 def _to_hex(r: float, g: float, b: float) -> str:
     return "#{:02x}{:02x}{:02x}".format(round(r * 255), round(g * 255), round(b * 255))
+
+
+def _mired_to_ct_pct(mired: int) -> int:
+    mired = max(MIN_MIRED, min(MAX_MIRED, mired))
+    return round((MAX_MIRED - mired) / (MAX_MIRED - MIN_MIRED) * 100)
+
+
+def _ct_pct_to_mired(pct: int) -> int:
+    return round(MAX_MIRED - (pct / 100) * (MAX_MIRED - MIN_MIRED))
+
+
+def _light_capabilities(light_type: str) -> tuple[bool, bool]:
+    """(supports_color, supports_color_temp), derived from the bridge's `type` string.
+
+    Confirmed against this app's bulbs (docs/hue-bridge-catalog.md):
+    "Dimmable light" (bri/on only), "Extended color light" (full xy/hs/ct),
+    "Color temperature light" (ct only). "Color light" is an older-generation
+    xy/hs-only type (no ct) that exists in Hue's lineup but not in this
+    app's current bulbs.
+    """
+    supports_color = light_type in ("Color light", "Extended color light")
+    supports_color_temp = light_type in ("Color temperature light", "Extended color light")
+    return supports_color, supports_color_temp
+
+
+def _hex_to_xy(hex_color: str) -> tuple[float, float]:
+    """sRGB hex -> Philips' documented xyY, inverse of _xy_to_rgb_hex's matrix."""
+    hex_color = hex_color.lstrip("#")
+    r, g, b = (int(hex_color[i : i + 2], 16) / 255 for i in (0, 2, 4))
+
+    def degamma(c: float) -> float:
+        return c / 12.92 if c <= 0.04045 else ((c + 0.055) / 1.055) ** 2.4
+
+    r, g, b = degamma(r), degamma(g), degamma(b)
+
+    X = r * 0.664511 + g * 0.154324 + b * 0.162028
+    Y = r * 0.283881 + g * 0.668433 + b * 0.047685
+    Z = r * 0.000088 + g * 0.072310 + b * 0.986039
+
+    total = X + Y + Z
+    if total <= 0:
+        return (0.0, 0.0)
+    return (X / total, Y / total)
 
 
 def _xy_to_rgb_hex(x: float, y: float) -> str:
@@ -150,12 +211,16 @@ def _pct_to_bri(pct: int) -> int:
 
 def _to_light(light_id: str, raw: dict) -> Light:
     state = raw.get("state", {})
+    supports_color, supports_color_temp = _light_capabilities(raw.get("type", ""))
     return Light(
         id=light_id,
         name=raw.get("name", f"Light {light_id}"),
         on=state.get("on", False),
         brightness_pct=_bri_to_pct(state.get("bri", 0)),
         color=_light_color(state),
+        color_temp_pct=_mired_to_ct_pct(state["ct"]) if "ct" in state else None,
+        supports_color=supports_color,
+        supports_color_temp=supports_color_temp,
         reachable=state.get("reachable", False),
     )
 
@@ -464,13 +529,23 @@ async def create_scene(
 
 
 async def set_light_state(
-    config: BridgeConfig, light_id: str, *, on: Optional[bool] = None, brightness_pct: Optional[int] = None
+    config: BridgeConfig,
+    light_id: str,
+    *,
+    on: Optional[bool] = None,
+    brightness_pct: Optional[int] = None,
+    color: Optional[str] = None,
+    color_temp_pct: Optional[int] = None,
 ) -> None:
     body = {}
     if on is not None:
         body["on"] = on
     if brightness_pct is not None:
         body["bri"] = _pct_to_bri(brightness_pct)
+    if color is not None:
+        body["xy"] = list(_hex_to_xy(color))
+    if color_temp_pct is not None:
+        body["ct"] = _ct_pct_to_mired(color_temp_pct)
     await _bridge_request(config, f"lights/{light_id}/state", method="PUT", json_body=body)
 
 
