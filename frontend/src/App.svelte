@@ -4,6 +4,7 @@
   import SceneCard from './SceneCard.svelte'
   import ZoneBrightnessSlider from './ZoneBrightnessSlider.svelte'
   import CreateSceneForm from './CreateSceneForm.svelte'
+  import AddFavoriteForm from './AddFavoriteForm.svelte'
   import { fetchJson, postJson, putJson } from './api.js'
 
   let lights = $state([])
@@ -17,6 +18,22 @@
   let zones = $state([])
   let zonesLoading = $state(true)
   let zonesError = $state(null)
+
+  // Favorited scene ids (issue #58) — a local UI preference stored server-
+  // side (see backend/app/main.py's /api/favorites), not bridge data. A
+  // load failure degrades to "no favorites" rather than blocking the rest
+  // of the page, same treatment as zonesError below.
+  let favoriteSceneIds = $state([])
+  let favoritesError = $state(null)
+
+  async function loadFavorites() {
+    favoritesError = null
+    try {
+      favoriteSceneIds = await fetchJson('/api/favorites')
+    } catch (err) {
+      favoritesError = err.message
+    }
+  }
 
   // Persisted so the panel stays collapsed/expanded across reloads rather
   // than resetting every time the app is opened. localStorage access is
@@ -140,6 +157,7 @@
     loadLights()
     loadScenes()
     loadZones()
+    loadFavorites()
   })
 
   // Buckets scenes under the zone they belong to. Scenes tied to a Room, an
@@ -149,6 +167,15 @@
   // so its "New Scene" button (issue #30) has somewhere to live; "Other"
   // isn't a real zone (no per-zone create button applies to it) and is
   // dropped when empty.
+  //
+  // Favorites (issue #58) is a virtual zone prepended ahead of every real
+  // one: not backed by a bridge group (isZone: false, so it gets no
+  // ZoneBrightnessSlider — there's no single set of bulbs to control), but
+  // always kept like a real zone (its own "+ Add" button needs somewhere to
+  // live even with zero favorites yet). Its scenes are the actual Scene
+  // objects from `scenes`, in favoriteSceneIds order, so activating one
+  // still goes through that scene's own real group_id — Favorites is just a
+  // curated view, not a separate copy.
   let zoneGroups = $derived.by(() => {
     const byId = new Map(
       zones.map((zone) => [
@@ -161,8 +188,32 @@
       const group = byId.get(scene.group_id) ?? other
       group.scenes.push(scene)
     }
-    return [...byId.values(), other].filter((group) => group.isZone || group.scenes.length > 0)
+    const scenesById = new Map(scenes.map((scene) => [scene.id, scene]))
+    const favorites = {
+      id: 'favorites',
+      name: 'Favorites',
+      scenes: favoriteSceneIds.map((id) => scenesById.get(id)).filter(Boolean),
+      isZone: false,
+      isFavorites: true,
+    }
+    return [favorites, ...byId.values(), other].filter(
+      (group) => group.isZone || group.isFavorites || group.scenes.length > 0
+    )
   })
+
+  // Per-zone-group collapse state (issue #57), keyed by group id. Absent
+  // means "use the default" rather than "expanded" — Favorites defaults
+  // open, everything else defaults collapsed (issue #58) — so a group only
+  // needs an entry here once the user has actually toggled it.
+  let collapsedGroupIds = $state({})
+
+  function isGroupCollapsed(groupId) {
+    return collapsedGroupIds[groupId] ?? groupId !== 'favorites'
+  }
+
+  function toggleGroupCollapsed(groupId) {
+    collapsedGroupIds[groupId] = !isGroupCollapsed(groupId)
+  }
 
   // Note: a bridge write can succeed here (200) for a light that's
   // temporarily unreachable — Hue queues state changes for offline Zigbee
@@ -224,6 +275,22 @@
   async function createScene(name, lightIds, groupId) {
     const scene = await postJson('/api/scenes', { name, light_ids: lightIds, group_id: groupId })
     scenes = [...scenes, scene]
+  }
+
+  // Whether the "Add to Favorites" dialog is open (issue #58's Favorites
+  // footer button — same one-dialog-at-a-time shape as createFormZone).
+  let addFavoriteFormOpen = $state(false)
+
+  async function addFavorites(sceneIds) {
+    const updated = [...new Set([...favoriteSceneIds, ...sceneIds])]
+    await putJson('/api/favorites', { scene_ids: updated })
+    favoriteSceneIds = updated
+  }
+
+  async function removeFavorite(sceneId) {
+    const updated = favoriteSceneIds.filter((id) => id !== sceneId)
+    await putJson('/api/favorites', { scene_ids: updated })
+    favoriteSceneIds = updated
   }
 
   // Unlike toggleLight, there's no meaningful "prior value" to optimistically
@@ -392,6 +459,13 @@
           onClose={() => (createFormZone = null)}
         />
       {/if}
+      {#if addFavoriteFormOpen}
+        <AddFavoriteForm
+          scenes={scenes.filter((scene) => !favoriteSceneIds.includes(scene.id))}
+          onAdd={addFavorites}
+          onClose={() => (addFavoriteFormOpen = false)}
+        />
+      {/if}
       {#if scenesLoading || zonesLoading}
         <p>Loading scenes…</p>
       {:else if scenesError}
@@ -404,36 +478,60 @@
             <button onclick={loadZones}>Retry</button>
           </p>
         {/if}
+        {#if favoritesError}
+          <p class="error">
+            Couldn't load favorites ({favoritesError}).
+            <button onclick={loadFavorites}>Retry</button>
+          </p>
+        {/if}
         {#if zoneGroups.length === 0}
           <p>No scenes found.</p>
         {/if}
         {#each zoneGroups as group (group.id)}
           <div class="zone-group">
             <div class="zone-header">
+              <button
+                class="collapse-toggle"
+                onclick={() => toggleGroupCollapsed(group.id)}
+                aria-expanded={!isGroupCollapsed(group.id)}
+                aria-label={isGroupCollapsed(group.id) ? `Expand ${group.name}` : `Collapse ${group.name}`}
+              >
+                <span class="chevron" class:collapsed={isGroupCollapsed(group.id)}>▾</span>
+              </button>
               <h3>{group.name}</h3>
               {#if group.isZone}
                 <ZoneBrightnessSlider zone={group} {lights} onSetBrightness={setZoneBrightness} onSetZoneOn={setZoneOn} />
               {/if}
             </div>
-            {#if group.scenes.length === 0}
-              <p class="hint">No scenes in this zone yet.</p>
-            {:else}
-              <div class="grid">
-                {#each group.scenes as scene (scene.id)}
-                  <SceneCard
-                    {scene}
-                    onActivate={activateScene}
-                    onPlay={playScene}
-                    onStop={stopScene}
-                    onSpeedChange={setSceneSpeed}
-                  />
-                {/each}
-              </div>
-            {/if}
-            {#if group.isZone}
-              <div class="zone-group-footer">
-                <button onclick={() => (createFormZone = group)}>+ New Scene</button>
-              </div>
+            {#if !isGroupCollapsed(group.id)}
+              {#if group.scenes.length === 0}
+                <p class="hint">
+                  {group.isFavorites ? 'No favorite scenes yet.' : 'No scenes in this zone yet.'}
+                </p>
+              {:else}
+                <div class="grid">
+                  {#each group.scenes as scene (scene.id)}
+                    <SceneCard
+                      {scene}
+                      onActivate={activateScene}
+                      onPlay={playScene}
+                      onStop={stopScene}
+                      onSpeedChange={setSceneSpeed}
+                      onRemoveFavorite={group.isFavorites ? removeFavorite : undefined}
+                    />
+                  {/each}
+                </div>
+              {/if}
+              {#if group.isZone}
+                <div class="zone-group-footer">
+                  <button onclick={() => (createFormZone = group)}>+ New Scene</button>
+                </div>
+              {/if}
+              {#if group.isFavorites}
+                <div class="zone-group-footer">
+                  <button onclick={() => (addFavoriteFormOpen = true)}>+ Add</button>
+                </div>
+              {/if}
             {/if}
           </div>
         {/each}
