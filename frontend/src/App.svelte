@@ -18,6 +18,13 @@
   let zonesLoading = $state(true)
   let zonesError = $state(null)
 
+  // Persisted so the panel stays collapsed/expanded across reloads rather
+  // than resetting every time the app is opened.
+  let bulbsCollapsed = $state(localStorage.getItem('bulbsCollapsed') === 'true')
+  $effect(() => {
+    localStorage.setItem('bulbsCollapsed', bulbsCollapsed)
+  })
+
   async function loadLights() {
     lightsLoading = true
     lightsError = null
@@ -327,21 +334,33 @@
   <p class="subtitle">Bulbs and scenes on your local Hue bridge</p>
 
   <div class="layout">
-    <aside class="bulbs-panel">
-      <h2>Bulbs</h2>
-      {#if lightsLoading}
-        <p>Loading bulbs…</p>
-      {:else if lightsError}
-        <p class="error">{lightsError}</p>
-        <button onclick={loadLights}>Retry</button>
-      {:else if lights.length === 0}
-        <p>No bulbs found.</p>
-      {:else}
-        <div class="bulbs-list">
-          {#each lights as light (light.id)}
-            <LightCard {light} onToggle={toggleLight} onBrightnessChange={setLightBrightness} />
-          {/each}
-        </div>
+    <aside class="bulbs-panel" class:collapsed={bulbsCollapsed}>
+      <div class="section-header">
+        <h2>Bulbs</h2>
+        <button
+          class="collapse-toggle"
+          onclick={() => (bulbsCollapsed = !bulbsCollapsed)}
+          aria-expanded={!bulbsCollapsed}
+          aria-label={bulbsCollapsed ? 'Expand bulbs panel' : 'Collapse bulbs panel'}
+        >
+          <span class="chevron" class:collapsed={bulbsCollapsed}>▾</span>
+        </button>
+      </div>
+      {#if !bulbsCollapsed}
+        {#if lightsLoading}
+          <p>Loading bulbs…</p>
+        {:else if lightsError}
+          <p class="error">{lightsError}</p>
+          <button onclick={loadLights}>Retry</button>
+        {:else if lights.length === 0}
+          <p>No bulbs found.</p>
+        {:else}
+          <div class="bulbs-list">
+            {#each lights as light (light.id)}
+              <LightCard {light} onToggle={toggleLight} onBrightnessChange={setLightBrightness} />
+            {/each}
+          </div>
+        {/if}
       {/if}
     </aside>
 
@@ -433,6 +452,10 @@
     min-width: 0;
   }
 
+  .bulbs-panel.collapsed {
+    flex-basis: auto;
+  }
+
   .scenes-section {
     flex: 1 1 auto;
     min-width: 0;
@@ -454,6 +477,42 @@
     margin: 0 0 1.25rem;
     font-size: 1.15rem;
     letter-spacing: -0.01em;
+  }
+
+  .bulbs-panel .section-header {
+    margin-bottom: 1.25rem;
+  }
+
+  .bulbs-panel .section-header h2 {
+    margin-bottom: 0;
+  }
+
+  .collapse-toggle {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 1.75rem;
+    height: 1.75rem;
+    padding: 0;
+    border-radius: 999px;
+    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
+    background: light-dark(#eee, #333);
+    color: inherit;
+    cursor: pointer;
+    transition: filter 0.15s ease;
+  }
+
+  .collapse-toggle:hover {
+    filter: brightness(0.95);
+  }
+
+  .chevron {
+    display: inline-block;
+    transition: transform 0.15s ease;
+  }
+
+  .chevron.collapsed {
+    transform: rotate(-90deg);
   }
 
   .bulbs-list {
