@@ -79,6 +79,61 @@ export const builtInThemes = [
       '--color-scheme': 'light',
     },
   },
+  {
+    // Recreates issue #20's cool palette (dark variant) — the values below
+    // are the same ones that used to live under app.css's
+    // [data-palette='cool'] light-dark(light, dark) pairs, before issue #21
+    // replaced the toggle with named themes.
+    id: 'cool-dark',
+    name: 'Cool - Dark',
+    tokens: {
+      '--bg': '#10171c',
+      '--surface': '#17212a',
+      '--surface-alt': '#1c2830',
+      '--border': '#2b3c47',
+      '--text': '#e4edf2',
+      '--text-muted': '#93a8b3',
+      '--accent': '#4fa3e0',
+      '--accent-text': '#0b1116',
+      '--accent-soft-bg': '#16283a',
+      '--accent-soft-border': '#235279',
+      '--shadow-color': 'rgba(0, 0, 0, 0.35)',
+      '--error-bg': '#3d211f',
+      '--error-text': '#f0958a',
+      '--font-family': '-apple-system, system-ui, sans-serif',
+      '--radius-sm': '0.5rem',
+      '--radius-md': '0.75rem',
+      '--radius-lg': '1rem',
+      '--radius-pill': '999px',
+      '--color-scheme': 'dark',
+    },
+  },
+  {
+    // Recreates issue #20's cool palette (light variant) — see cool-dark.
+    id: 'cool-light',
+    name: 'Cool - Light',
+    tokens: {
+      '--bg': '#f1f6f8',
+      '--surface': '#ffffff',
+      '--surface-alt': '#e8eef2',
+      '--border': '#ccdae3',
+      '--text': '#16232b',
+      '--text-muted': '#5f7684',
+      '--accent': '#1f6fb2',
+      '--accent-text': '#f5fbff',
+      '--accent-soft-bg': '#dcedfa',
+      '--accent-soft-border': '#8ec3e8',
+      '--shadow-color': 'rgba(10, 30, 45, 0.1)',
+      '--error-bg': '#fbe3e0',
+      '--error-text': '#a3392c',
+      '--font-family': '-apple-system, system-ui, sans-serif',
+      '--radius-sm': '0.5rem',
+      '--radius-md': '0.75rem',
+      '--radius-lg': '1rem',
+      '--radius-pill': '999px',
+      '--color-scheme': 'light',
+    },
+  },
 ]
 
 export const DEFAULT_THEME_ID = 'default-dark'
