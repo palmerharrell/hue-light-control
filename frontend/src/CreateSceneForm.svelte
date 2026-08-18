@@ -1,5 +1,5 @@
 <script>
-  import { onMount } from 'svelte'
+  import FormDialog from './FormDialog.svelte'
 
   // fixedZone, when set, pins the scene to that zone (issue #30's per-zone
   // "New Scene" button) — the zone dropdown and light checkboxes below are
@@ -7,7 +7,7 @@
   // actual membership (see the hint text and HUE_API.md).
   let { lights, zones, fixedZone = null, onCreate, onClose } = $props()
 
-  let dialog = $state(null)
+  let dialogEl = $state(null)
   let name = $state('')
   let selectedLightIds = $state([])
   let selectedZoneId = $state(fixedZone?.id ?? '')
@@ -22,10 +22,6 @@
     name.trim().length > 0 && (selectedZoneId || selectedLightIds.length > 0) && !submitting
   )
 
-  onMount(() => {
-    dialog?.showModal()
-  })
-
   async function handleSubmit(event) {
     event.preventDefault()
     if (!canSubmit) return
@@ -33,35 +29,16 @@
     error = null
     try {
       await onCreate(name.trim(), selectedLightIds, selectedZoneId || null)
-      dialog?.close()
+      dialogEl?.close()
     } catch (err) {
       error = err.message
       submitting = false
     }
   }
-
-  function handleBackdropClick(event) {
-    // Any click that doesn't land on a child element (backdrop AND the
-    // dialog's own padding around <form>) reports target === dialog — so
-    // that check alone can't tell a real backdrop click from one that
-    // landed in the card's padding (visually still inside the card).
-    // Compare coordinates against the dialog's own rendered box instead
-    // (its border box, which includes the padding): only a click outside
-    // that box is a real click on the backdrop.
-    const rect = dialog.getBoundingClientRect()
-    const outside =
-      event.clientX < rect.left ||
-      event.clientX > rect.right ||
-      event.clientY < rect.top ||
-      event.clientY > rect.bottom
-    if (outside) {
-      dialog.close()
-    }
-  }
 </script>
 
-<dialog bind:this={dialog} onclose={onClose} onclick={handleBackdropClick}>
-  <form onsubmit={handleSubmit}>
+<FormDialog bind:dialogEl {onClose}>
+  <form class="dialog-form" onsubmit={handleSubmit}>
     <h2>{fixedZone ? `New Scene — ${fixedZone.name}` : 'New Scene'}</h2>
 
     <label class="field">
@@ -79,9 +56,9 @@
         {#if lights.length === 0}
           <p class="hint">No lights available.</p>
         {:else}
-          <div class="light-list">
+          <div class="option-list">
             {#each lights as light (light.id)}
-              <label class="light-option">
+              <label class="option-row">
                 <input type="checkbox" bind:group={selectedLightIds} value={light.id} />
                 {light.name}
               </label>
@@ -113,128 +90,10 @@
     {/if}
 
     <div class="actions">
-      <button type="button" onclick={() => dialog?.close()}>Cancel</button>
+      <button type="button" onclick={() => dialogEl?.close()}>Cancel</button>
       <button type="submit" class="primary" disabled={!canSubmit}>
         {submitting ? 'Creating…' : 'Create Scene'}
       </button>
     </div>
   </form>
-</dialog>
-
-<style>
-  dialog {
-    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
-    border-radius: 0.75rem;
-    padding: 1.25rem;
-    background: light-dark(#fff, #1e1e1e);
-    color: inherit;
-    width: min(24rem, 90vw);
-    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
-  }
-
-  dialog::backdrop {
-    background: rgba(0, 0, 0, 0.4);
-  }
-
-  button.primary:hover:not(:disabled) {
-    filter: brightness(1.08);
-  }
-
-  .actions button:not(.primary):hover {
-    filter: brightness(0.95);
-  }
-
-  h2 {
-    margin: 0 0 1rem;
-    font-size: 1.1rem;
-  }
-
-  form {
-    display: flex;
-    flex-direction: column;
-    gap: 1rem;
-  }
-
-  .field {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    border: none;
-    padding: 0;
-    margin: 0;
-  }
-
-  .field > span,
-  .field legend {
-    font-size: 0.85rem;
-    font-weight: 600;
-    padding: 0;
-  }
-
-  input[type='text'],
-  select {
-    font: inherit;
-    padding: 0.4rem 0.5rem;
-    border-radius: 0.5rem;
-    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
-    background: light-dark(#fff, #262626);
-    color: inherit;
-  }
-
-  .light-list {
-    display: flex;
-    flex-direction: column;
-    gap: 0.4rem;
-    max-height: 10rem;
-    overflow-y: auto;
-    padding: 0.5rem;
-    border-radius: 0.5rem;
-    background: light-dark(#f7f7f7, #262626);
-  }
-
-  .light-option {
-    display: flex;
-    align-items: center;
-    gap: 0.5rem;
-    font-size: 0.9rem;
-  }
-
-  .hint {
-    font-size: 0.8rem;
-    color: light-dark(#666, #aaa);
-    margin: 0;
-  }
-
-  .error {
-    font-size: 0.85rem;
-    color: light-dark(#a3392c, #f0958a);
-    margin: 0;
-  }
-
-  .actions {
-    display: flex;
-    justify-content: flex-end;
-    gap: 0.5rem;
-  }
-
-  button {
-    font: inherit;
-    padding: 0.4rem 0.9rem;
-    border-radius: 999px;
-    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
-    background: light-dark(#eee, #333);
-    color: inherit;
-    cursor: pointer;
-  }
-
-  button.primary {
-    background: light-dark(#1c7a2e, #1f3d24);
-    color: light-dark(#fff, #7fe396);
-    border-color: transparent;
-  }
-
-  button:disabled {
-    opacity: 0.5;
-    cursor: not-allowed;
-  }
-</style>
+</FormDialog>
