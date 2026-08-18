@@ -1,7 +1,10 @@
 <script>
   import BrightnessSlider from './BrightnessSlider.svelte'
 
-  let { scene, onActivate, onPlay, onStop, onSpeedChange } = $props()
+  // onRemoveFavorite, when set, renders a small remove button (issue #58) —
+  // only passed by App.svelte for cards rendered inside the Favorites group,
+  // never for a scene's "home" zone card.
+  let { scene, onActivate, onPlay, onStop, onSpeedChange, onRemoveFavorite } = $props()
 
   // Standalone LightScenes (no group_id) can't be activated via the
   // group-action endpoint (see HUE_API.md's Scenes section) — render them
@@ -76,6 +79,22 @@
   function changeSpeed(value) {
     onSpeedChange(scene.id, Number(value) / 100)
   }
+
+  let removePending = $state(false)
+  let removeError = $state(null)
+
+  async function removeFavorite(event) {
+    event.stopPropagation()
+    if (removePending) return
+    removePending = true
+    removeError = null
+    try {
+      await onRemoveFavorite(scene.id)
+    } catch (err) {
+      removeError = err.message
+      removePending = false
+    }
+  }
 </script>
 
 <div class="card" class:inactive={!activatable}>
@@ -91,17 +110,31 @@
   >
     <span class="name-row">
       <span class="name">{scene.name}</span>
-      <button
-        type="button"
-        class="play-toggle"
-        class:playing={scene.playing}
-        disabled={playPending}
-        title={scene.playing ? 'Stop dynamic effect' : 'Play dynamic effect'}
-        onclick={togglePlay}
-        onkeydown={stopBubble}
-      >
-        {scene.playing ? '⏸' : '▶'}
-      </button>
+      <span class="card-actions">
+        <button
+          type="button"
+          class="play-toggle"
+          class:playing={scene.playing}
+          disabled={playPending}
+          title={scene.playing ? 'Stop dynamic effect' : 'Play dynamic effect'}
+          onclick={togglePlay}
+          onkeydown={stopBubble}
+        >
+          {scene.playing ? '⏸' : '▶'}
+        </button>
+        {#if onRemoveFavorite}
+          <button
+            type="button"
+            class="remove-favorite"
+            disabled={removePending}
+            title="Remove from Favorites"
+            onclick={removeFavorite}
+            onkeydown={stopBubble}
+          >
+            ✕
+          </button>
+        {/if}
+      </span>
     </span>
     {#if scene.playing}
       <div
@@ -125,6 +158,9 @@
     {/if}
     {#if scene.playError}
       <span class="badge error-badge">{scene.playError}</span>
+    {/if}
+    {#if removeError}
+      <span class="badge error-badge">{removeError}</span>
     {/if}
   </div>
 </div>
@@ -192,6 +228,39 @@
 
   .name {
     font-weight: 600;
+  }
+
+  .card-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.4rem;
+    flex-shrink: 0;
+  }
+
+  .remove-favorite {
+    flex-shrink: 0;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    border: 1px solid light-dark(#d8d8d8, #3a3a3a);
+    background: light-dark(#f4f4f4, #2a2a2a);
+    font-size: 0.7rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: inherit;
+  }
+
+  .remove-favorite:hover:not(:disabled) {
+    filter: brightness(0.95);
+    color: light-dark(#a3392c, #f0958a);
+  }
+
+  .remove-favorite:disabled {
+    opacity: 0.55;
+    cursor: default;
   }
 
   .play-toggle {
