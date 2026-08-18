@@ -780,7 +780,8 @@
   .theme-picker select {
     font: inherit;
     font-size: 0.85rem;
-    padding: 0.35rem 0.6rem;
+    padding: 0.35rem 1.6rem 0.35rem 0.9rem;
+    min-width: 9rem;
     border-radius: var(--radius-pill);
     border: 1px solid var(--border);
     background: var(--surface-alt);
