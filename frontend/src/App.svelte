@@ -569,7 +569,7 @@
       <p class="subtitle">Bulbs and scenes on your local Hue bridge</p>
     </div>
     <div class="theme-picker">
-      <label>
+      <label class="select-wrap">
         <span class="sr-only">Theme</span>
         <select bind:value={themeId} aria-label="Theme">
           {#each builtInThemes as theme (theme.id)}
@@ -777,15 +777,42 @@
     flex-shrink: 0;
   }
 
+  /* Native select arrows sit in a fixed browser-drawn gutter that ignores
+     padding-right, so widening the padding alone left the arrow flush
+     against the pill's edge. appearance: none drops that native icon in
+     favor of a mask-drawn chevron below, positioned with real spacing from
+     the edge and colored via currentColor so it still follows the theme. */
+  .select-wrap {
+    position: relative;
+    display: inline-flex;
+  }
+
+  .select-wrap::after {
+    content: '';
+    position: absolute;
+    top: 50%;
+    right: 0.9rem;
+    width: 0.65rem;
+    height: 0.65rem;
+    transform: translateY(-50%);
+    background: var(--text-muted);
+    mask: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='none' stroke='%23000' stroke-width='2.5' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'/%3E%3C/svg%3E")
+      center / contain no-repeat;
+    mask-repeat: no-repeat;
+    pointer-events: none;
+  }
+
   .theme-picker select {
     font: inherit;
     font-size: 0.85rem;
-    padding: 0.35rem 1.6rem 0.35rem 0.9rem;
+    padding: 0.35rem 2.3rem 0.35rem 0.9rem;
     min-width: 9rem;
     border-radius: var(--radius-pill);
     border: 1px solid var(--border);
     background: var(--surface-alt);
     color: inherit;
+    appearance: none;
+    -webkit-appearance: none;
   }
 
   .theme-picker button {
