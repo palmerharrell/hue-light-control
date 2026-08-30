@@ -20,13 +20,14 @@ def _recovery_path() -> Path:
     return CONFIG_PATH.parent / "config.yaml.recovery"
 
 
-# Serializes add_custom_theme's check-then-write against itself — FastAPI's
-# sync routes run in a threadpool, so two concurrent imports could otherwise
-# both read config.yaml before either writes, both pass a duplicate-id
-# check done outside this lock, and the second write would silently clobber
-# the first (each import_theme caller still getting a 201) rather than one
-# of them getting the intended 409.
-_themes_lock = threading.Lock()
+# Serializes every read-modify-write against config.yaml (originally just
+# add_custom_theme's check-then-write, e.g. two concurrent theme imports
+# both passing a duplicate-id check before either writes). Now guards every
+# writer, not just that one: _write_config writes config.yaml in place
+# (see its comment for why), which two overlapping writers could otherwise
+# interleave into corrupt, unparseable YAML -- unlike the old tempfile+
+# os.replace scheme, where the worst case was a benign lost update.
+_config_write_lock = threading.Lock()
 
 
 class DuplicateThemeError(Exception):
@@ -61,13 +62,18 @@ def load_config() -> BridgeConfig:
     if not CONFIG_PATH.exists():
         return BridgeConfig()
     with CONFIG_PATH.open() as f:
-        data = yaml.safe_load(f)
+        try:
+            data = yaml.safe_load(f)
+        except yaml.YAMLError:
+            # A crash mid-write (see _write_config) can leave config.yaml
+            # with new content followed by a leftover fragment of the old
+            # file's tail -- not just empty, but invalid YAML outright.
+            data = None
     if not data:
-        # config.yaml can end up empty if the process was killed at the
-        # exact wrong instant during _write_config's in-place write (see
-        # its comment) -- fall back to the last-known-good recovery copy
-        # rather than silently losing api_key, which would force physically
-        # re-pairing at the bridge.
+        # Also covers the plain-empty case (crash before any bytes were
+        # written) -- either way, fall back to the last-known-good recovery
+        # copy rather than silently losing api_key, which would force
+        # physically re-pairing at the bridge.
         data = _load_recovery_data()
     return BridgeConfig(**data)
 
@@ -112,19 +118,21 @@ def _write_config(config: BridgeConfig) -> None:
 
 
 def update_bridge_ip(ip: str) -> None:
-    config = load_config()
-    config.bridge_ip = ip
-    _write_config(config)
+    with _config_write_lock:
+        config = load_config()
+        config.bridge_ip = ip
+        _write_config(config)
 
 
 def update_favorite_scene_ids(scene_ids: list[str]) -> None:
-    config = load_config()
-    config.favorite_scene_ids = scene_ids
-    _write_config(config)
+    with _config_write_lock:
+        config = load_config()
+        config.favorite_scene_ids = scene_ids
+        _write_config(config)
 
 
 def add_custom_theme(theme: Theme) -> None:
-    with _themes_lock:
+    with _config_write_lock:
         config = load_config()
         if any(t.id == theme.id for t in config.custom_themes):
             raise DuplicateThemeError(theme.id)
@@ -133,6 +141,7 @@ def add_custom_theme(theme: Theme) -> None:
 
 
 def remove_custom_theme(theme_id: str) -> None:
-    config = load_config()
-    config.custom_themes = [t for t in config.custom_themes if t.id != theme_id]
-    _write_config(config)
+    with _config_write_lock:
+        config = load_config()
+        config.custom_themes = [t for t in config.custom_themes if t.id != theme_id]
+        _write_config(config)

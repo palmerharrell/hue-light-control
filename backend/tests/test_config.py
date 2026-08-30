@@ -67,3 +67,20 @@ def test_load_config_empty_with_no_recovery_copy_returns_defaults(tmp_path, monk
     result = load_config()
 
     assert result == BridgeConfig()
+
+
+def test_load_config_falls_back_to_recovery_on_corrupt_yaml(tmp_path, monkeypatch):
+    # Simulates a crash in the write-before-truncate window when the new
+    # content is shorter than the old: config.yaml ends up as valid new
+    # content followed by a leftover fragment of the old file's tail,
+    # which is likely to fail to parse outright rather than just come back
+    # empty -- this must fall back to the recovery copy too, not 500.
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("bridge_ip: 192.168.x.y\n  - broken: [unterminated\n")
+    (tmp_path / "config.yaml.recovery").write_text("bridge_ip: 192.168.x.x\napi_key: test-api-key\n")
+    monkeypatch.setattr(config_module, "CONFIG_PATH", config_path)
+
+    result = load_config()
+
+    assert result.bridge_ip == "192.168.x.x"
+    assert result.api_key == "test-api-key"
