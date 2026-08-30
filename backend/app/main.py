@@ -16,25 +16,43 @@ from app.config import (
     remove_custom_theme,
     update_favorite_scene_ids,
 )
-from app.hue_client import (
-    BridgeNotConfigured,
-    BridgeUnreachable,
-    Light,
-    Scene,
-    Zone,
-    activate_scene,
-    create_scene,
-    get_group_light_ids,
-    get_lights,
-    get_scenes,
-    get_zones,
-    play_scene,
-    set_group_state,
-    set_light_state,
-    set_scene_speed,
-    set_zone_brightness_for_on_lights,
-    stop_scene,
-)
+from app.hue_client import BridgeNotConfigured, BridgeUnreachable, Light, Scene, Zone
+
+# Runs entirely on in-memory fixture data instead of a real bridge -- lets
+# the app be run and demoed (e.g. for portfolio purposes) with no Hue
+# Bridge on the network. See app/mock_hue_client.py.
+DEMO_MODE = os.environ.get("HUE_DEMO_MODE", "").strip().lower() in ("1", "true", "yes")
+
+if DEMO_MODE:
+    from app.mock_hue_client import (
+        activate_scene,
+        create_scene,
+        get_group_light_ids,
+        get_lights,
+        get_scenes,
+        get_zones,
+        play_scene,
+        set_group_state,
+        set_light_state,
+        set_scene_speed,
+        set_zone_brightness_for_on_lights,
+        stop_scene,
+    )
+else:
+    from app.hue_client import (
+        activate_scene,
+        create_scene,
+        get_group_light_ids,
+        get_lights,
+        get_scenes,
+        get_zones,
+        play_scene,
+        set_group_state,
+        set_light_state,
+        set_scene_speed,
+        set_zone_brightness_for_on_lights,
+        stop_scene,
+    )
 
 app = FastAPI(title="Hue Light Control API")
 
@@ -61,6 +79,8 @@ async def bridge_unreachable_handler(request: Request, exc: BridgeUnreachable) -
 
 @app.get("/api/health")
 async def health():
+    if DEMO_MODE:
+        return {"status": "ok", "reachable": True, "configured": True, "bridge_ip": "demo"}
     config = load_config()
     status = await ensure_bridge_reachable(config)
     return {"status": "ok", **status}
