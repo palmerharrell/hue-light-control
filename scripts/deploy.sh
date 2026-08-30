@@ -10,8 +10,9 @@
 #   - REMOTE_STATIC_DIR set to the nginx-served static directory, e.g.:
 #       export REMOTE_STATIC_DIR=/opt/webapps/hueLightControl
 #   - One-time manual setup already done on MINIPC: those directories
-#     created, backend/config.yaml placed at $REMOTE_DIR/backend/config.yaml,
-#     a .env placed at $REMOTE_DIR/.env with the real CORS_ORIGIN (both
+#     created, backend/data/config.yaml placed at
+#     $REMOTE_DIR/backend/data/config.yaml, a .env placed at
+#     $REMOTE_DIR/.env with the real CORS_ORIGIN (both
 #     scp'd by hand — never by this script, which only ever syncs
 #     docker-compose.yml itself, not the directory it lives in), and
 #     nginx.conf wired up. See docs/deploy.md.
