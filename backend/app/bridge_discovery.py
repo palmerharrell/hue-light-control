@@ -7,7 +7,14 @@ from typing import Optional
 
 import httpx
 
+from app.config import BridgeConfig, load_config, update_bridge_ip
+
 logger = logging.getLogger(__name__)
+
+# Serializes rediscovery so concurrent callers (e.g. the frontend's proactive
+# health check racing a panel's own failed request) don't each run their own
+# SSDP/cloud search and race to write config.yaml.
+_rediscovery_lock = asyncio.Lock()
 
 CLOUD_DISCOVERY_URL = "https://discovery.meethue.com/"
 
@@ -135,3 +142,36 @@ async def rediscover_bridge_ip(api_key: str) -> Optional[str]:
 
     _last_failure_at = time.monotonic()
     return None
+
+
+async def ensure_bridge_reachable(config: BridgeConfig) -> dict:
+    """Proactively verify the configured bridge_ip is still valid, repairing
+    config.yaml via rediscovery if it isn't. Meant to be called once on page
+    load (via /api/health) so a drifted IP self-heals before the frontend's
+    panels fire their own requests, rather than only reacting to a failure.
+
+    Never raises — a health endpoint needs a clean status even when the
+    bridge is genuinely unreachable.
+    """
+    if not config.bridge_ip or not config.api_key:
+        return {"reachable": False, "configured": False, "bridge_ip": None}
+
+    if await _verify_bridge(config.bridge_ip, config.api_key):
+        return {"reachable": True, "configured": True, "bridge_ip": config.bridge_ip}
+
+    async with _rediscovery_lock:
+        # A concurrent caller (e.g. a panel's own failed request) may have
+        # already repaired config.yaml while we were waiting for the lock.
+        current = load_config()
+        if current.bridge_ip and current.bridge_ip != config.bridge_ip:
+            if await _verify_bridge(current.bridge_ip, current.api_key):
+                return {"reachable": True, "configured": True, "bridge_ip": current.bridge_ip}
+
+        new_ip = await rediscover_bridge_ip(config.api_key)
+        if new_ip is None:
+            return {"reachable": False, "configured": True, "bridge_ip": config.bridge_ip}
+
+        if new_ip != config.bridge_ip:
+            logger.info("Bridge IP changed (%s -> %s), updating config.yaml", config.bridge_ip, new_ip)
+            update_bridge_ip(new_ip)
+        return {"reachable": True, "configured": True, "bridge_ip": new_ip}

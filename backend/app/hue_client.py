@@ -7,15 +7,10 @@ from typing import Optional
 import httpx
 from pydantic import BaseModel
 
-from app.bridge_discovery import rediscover_bridge_ip
+from app.bridge_discovery import _rediscovery_lock, rediscover_bridge_ip
 from app.config import BridgeConfig, load_config, update_bridge_ip
 
 logger = logging.getLogger(__name__)
-
-# Serializes rediscovery so concurrent requests (e.g. the frontend's
-# lights + scenes calls firing together) don't each run their own SSDP/cloud
-# search and race to write config.yaml.
-_rediscovery_lock = asyncio.Lock()
 
 
 class BridgeNotConfigured(Exception):
@@ -272,6 +267,13 @@ async def _request_bridge(
 async def _bridge_request(
     config: BridgeConfig, path: str, *, method: str = "GET", json_body: Optional[dict] = None
 ) -> dict:
+    # The frontend now runs a proactive verify-and-repair check
+    # (bridge_discovery.ensure_bridge_reachable, via /api/health) on page
+    # load, so a drifted IP is typically already fixed before any panel gets
+    # here. This path remains for drift that happens mid-session and for a
+    # genuine network-level failure — see the HTTPStatusError handling below
+    # for why a merely-rejected request doesn't also trigger rediscovery.
+    #
     # On a genuine network failure, the retry path below blindly re-sends
     # the same json_body against a rediscovered/newly-current IP. That's
     # fine for idempotent methods (GET, and PUT writes like "set brightness

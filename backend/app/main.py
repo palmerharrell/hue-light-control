@@ -7,6 +7,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from app.bridge_discovery import ensure_bridge_reachable
 from app.config import (
     DuplicateThemeError,
     Theme,
@@ -59,9 +60,10 @@ async def bridge_unreachable_handler(request: Request, exc: BridgeUnreachable) -
 
 
 @app.get("/api/health")
-def health():
+async def health():
     config = load_config()
-    return {"status": "ok", "bridge_configured": config.bridge_ip is not None}
+    status = await ensure_bridge_reachable(config)
+    return {"status": "ok", **status}
 
 
 @app.get("/api/lights")
