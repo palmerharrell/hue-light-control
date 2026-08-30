@@ -11,6 +11,7 @@ docs/
 .env.*
 !.env.example
 config.yaml
+config.yaml.recovery
 config.local.*
 
 # Python

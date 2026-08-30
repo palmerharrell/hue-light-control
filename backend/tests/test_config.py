@@ -30,3 +30,40 @@ def test_update_bridge_ip_round_trips(tmp_path, monkeypatch):
     reloaded = load_config()
     assert reloaded.bridge_ip == "192.168.x.y"
     assert reloaded.api_key == "test-api-key"
+
+
+def test_write_config_leaves_a_recovery_copy(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("bridge_ip: 192.168.x.x\napi_key: test-api-key\n")
+    monkeypatch.setattr(config_module, "CONFIG_PATH", config_path)
+
+    update_bridge_ip("192.168.x.y")
+
+    recovery_path = tmp_path / "config.yaml.recovery"
+    assert recovery_path.exists()
+    assert "192.168.x.y" in recovery_path.read_text()
+
+
+def test_load_config_falls_back_to_recovery_when_config_yaml_is_empty(tmp_path, monkeypatch):
+    # Simulates the crash this fix targets: config.yaml left empty by an
+    # interrupted in-place write, with the recovery copy from the last
+    # successful write still intact.
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("")
+    (tmp_path / "config.yaml.recovery").write_text("bridge_ip: 192.168.x.x\napi_key: test-api-key\n")
+    monkeypatch.setattr(config_module, "CONFIG_PATH", config_path)
+
+    result = load_config()
+
+    assert result.bridge_ip == "192.168.x.x"
+    assert result.api_key == "test-api-key"
+
+
+def test_load_config_empty_with_no_recovery_copy_returns_defaults(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("")
+    monkeypatch.setattr(config_module, "CONFIG_PATH", config_path)
+
+    result = load_config()
+
+    assert result == BridgeConfig()
