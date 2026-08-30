@@ -7,8 +7,8 @@ from typing import Optional
 import httpx
 from pydantic import BaseModel
 
-from app.bridge_discovery import _rediscovery_lock, rediscover_bridge_ip
-from app.config import BridgeConfig, load_config, update_bridge_ip
+from app.bridge_discovery import resolve_working_bridge_ip
+from app.config import BridgeConfig
 
 logger = logging.getLogger(__name__)
 
@@ -305,36 +305,21 @@ async def _bridge_request(
         if method == "POST":
             raise BridgeUnreachable("could not reach the bridge") from exc
 
-    async with _rediscovery_lock:
-        # A concurrent request may have already rediscovered and persisted a
-        # working IP while we were waiting for the lock — try that first.
-        current_ip = load_config().bridge_ip
-        if current_ip and current_ip != config.bridge_ip:
-            try:
-                return await _request_bridge(current_ip, config.api_key, path, method=method, json_body=json_body)
-            except httpx.HTTPStatusError as exc:
-                logger.warning("Bridge at %s rejected the request: %s", current_ip, exc)
-                raise BridgeUnreachable("bridge rejected the request") from exc
-            except httpx.HTTPError:
-                pass
+    # resolve_working_bridge_ip reuses a concurrent caller's already-verified
+    # fix if one just landed (e.g. the frontend's proactive health check),
+    # otherwise runs SSDP/cloud discovery itself and persists the result.
+    new_ip = await resolve_working_bridge_ip(config.bridge_ip, config.api_key)
+    if new_ip is None:
+        raise BridgeUnreachable("could not reach the bridge")
 
-        new_ip = await rediscover_bridge_ip(config.api_key)
-        if new_ip is None:
-            raise BridgeUnreachable("could not reach the bridge")
-
-        try:
-            data = await _request_bridge(new_ip, config.api_key, path, method=method, json_body=json_body)
-        except httpx.HTTPStatusError as exc:
-            logger.warning("Bridge at %s rejected the request: %s", new_ip, exc)
-            raise BridgeUnreachable("bridge rejected the request") from exc
-        except httpx.HTTPError as exc:
-            logger.warning("Rediscovered bridge at %s also unreachable: %s", new_ip, exc)
-            raise BridgeUnreachable("could not reach the bridge") from exc
-
-        if new_ip != config.bridge_ip:
-            logger.info("Bridge IP changed (%s -> %s), updating config.yaml", config.bridge_ip, new_ip)
-            update_bridge_ip(new_ip)
-        return data
+    try:
+        return await _request_bridge(new_ip, config.api_key, path, method=method, json_body=json_body)
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Bridge at %s rejected the request: %s", new_ip, exc)
+        raise BridgeUnreachable("bridge rejected the request") from exc
+    except httpx.HTTPError as exc:
+        logger.warning("Rediscovered bridge at %s also unreachable: %s", new_ip, exc)
+        raise BridgeUnreachable("could not reach the bridge") from exc
 
 
 async def _request_bridge_v2(

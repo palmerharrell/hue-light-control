@@ -13,8 +13,9 @@ logger = logging.getLogger(__name__)
 
 # Serializes rediscovery so concurrent callers (e.g. the frontend's proactive
 # health check racing a panel's own failed request) don't each run their own
-# SSDP/cloud search and race to write config.yaml.
-_rediscovery_lock = asyncio.Lock()
+# SSDP/cloud search and race to write config.yaml. Shared with hue_client.py
+# (not underscore-prefixed, since it's intentionally used across modules).
+rediscovery_lock = asyncio.Lock()
 
 CLOUD_DISCOVERY_URL = "https://discovery.meethue.com/"
 
@@ -144,6 +145,32 @@ async def rediscover_bridge_ip(api_key: str) -> Optional[str]:
     return None
 
 
+async def resolve_working_bridge_ip(stale_ip: str, api_key: str) -> Optional[str]:
+    """Find a working bridge IP to replace one that just failed, persisting it
+    to config.yaml if it's actually new. Shared by hue_client._bridge_request
+    (reactive: a request against stale_ip just failed) and
+    ensure_bridge_reachable (proactive: stale_ip failed a live verify).
+
+    Owns rediscovery_lock itself, so a concurrent caller's rediscovery
+    (already verified, by construction, before it got persisted) is reused
+    instead of triggering a second SSDP/cloud search. Returns None only if
+    discovery itself comes up empty — never raises.
+    """
+    async with rediscovery_lock:
+        current = load_config()
+        if current.bridge_ip and current.bridge_ip != stale_ip:
+            return current.bridge_ip
+
+        new_ip = await rediscover_bridge_ip(api_key)
+        if new_ip is None:
+            return None
+
+        if new_ip != stale_ip:
+            logger.info("Bridge IP changed (%s -> %s), updating config.yaml", stale_ip, new_ip)
+            update_bridge_ip(new_ip)
+        return new_ip
+
+
 async def ensure_bridge_reachable(config: BridgeConfig) -> dict:
     """Proactively verify the configured bridge_ip is still valid, repairing
     config.yaml via rediscovery if it isn't. Meant to be called once on page
@@ -159,19 +186,7 @@ async def ensure_bridge_reachable(config: BridgeConfig) -> dict:
     if await _verify_bridge(config.bridge_ip, config.api_key):
         return {"reachable": True, "configured": True, "bridge_ip": config.bridge_ip}
 
-    async with _rediscovery_lock:
-        # A concurrent caller (e.g. a panel's own failed request) may have
-        # already repaired config.yaml while we were waiting for the lock.
-        current = load_config()
-        if current.bridge_ip and current.bridge_ip != config.bridge_ip:
-            if await _verify_bridge(current.bridge_ip, current.api_key):
-                return {"reachable": True, "configured": True, "bridge_ip": current.bridge_ip}
-
-        new_ip = await rediscover_bridge_ip(config.api_key)
-        if new_ip is None:
-            return {"reachable": False, "configured": True, "bridge_ip": config.bridge_ip}
-
-        if new_ip != config.bridge_ip:
-            logger.info("Bridge IP changed (%s -> %s), updating config.yaml", config.bridge_ip, new_ip)
-            update_bridge_ip(new_ip)
-        return {"reachable": True, "configured": True, "bridge_ip": new_ip}
+    new_ip = await resolve_working_bridge_ip(config.bridge_ip, config.api_key)
+    if new_ip is None:
+        return {"reachable": False, "configured": True, "bridge_ip": config.bridge_ip}
+    return {"reachable": True, "configured": True, "bridge_ip": new_ip}
