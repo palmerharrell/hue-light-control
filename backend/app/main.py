@@ -16,25 +16,16 @@ from app.config import (
     remove_custom_theme,
     update_favorite_scene_ids,
 )
-from app.hue_client import (
-    BridgeNotConfigured,
-    BridgeUnreachable,
-    Light,
-    Scene,
-    Zone,
-    activate_scene,
-    create_scene,
-    get_group_light_ids,
-    get_lights,
-    get_scenes,
-    get_zones,
-    play_scene,
-    set_group_state,
-    set_light_state,
-    set_scene_speed,
-    set_zone_brightness_for_on_lights,
-    stop_scene,
-)
+from app import hue_client, mock_hue_client
+from app.hue_client import BridgeNotConfigured, BridgeUnreachable, Light, Scene, Zone
+
+# Runs entirely on in-memory fixture data instead of a real bridge -- lets
+# the app be run and demoed (e.g. for portfolio purposes) with no Hue
+# Bridge on the network. See app/mock_hue_client.py. A single module
+# reference (rather than two parallel import lists) keeps demo and real mode
+# structurally unable to drift apart when a function is added/renamed.
+DEMO_MODE = os.environ.get("HUE_DEMO_MODE", "").strip().lower() in ("1", "true", "yes")
+_client = mock_hue_client if DEMO_MODE else hue_client
 
 app = FastAPI(title="Hue Light Control API")
 
@@ -61,6 +52,8 @@ async def bridge_unreachable_handler(request: Request, exc: BridgeUnreachable) -
 
 @app.get("/api/health")
 async def health():
+    if DEMO_MODE:
+        return {"status": "ok", "reachable": True, "configured": True, "bridge_ip": "demo"}
     config = load_config()
     status = await ensure_bridge_reachable(config)
     return {"status": "ok", **status}
@@ -69,7 +62,7 @@ async def health():
 @app.get("/api/lights")
 async def list_lights() -> list[Light]:
     config = load_config()
-    return await get_lights(config)
+    return await _client.get_lights(config)
 
 
 class LightStateUpdate(BaseModel):
@@ -91,7 +84,7 @@ async def update_light_state(light_id: str, update: LightStateUpdate):
     if update.on is None and update.brightness_pct is None and update.color is None and update.color_temp_pct is None:
         raise HTTPException(status_code=400, detail="must set on, brightness_pct, color, and/or color_temp_pct")
     config = load_config()
-    await set_light_state(
+    await _client.set_light_state(
         config,
         light_id,
         on=update.on,
@@ -105,13 +98,13 @@ async def update_light_state(light_id: str, update: LightStateUpdate):
 @app.get("/api/scenes")
 async def list_scenes() -> list[Scene]:
     config = load_config()
-    return await get_scenes(config)
+    return await _client.get_scenes(config)
 
 
 @app.get("/api/zones")
 async def list_zones() -> list[Zone]:
     config = load_config()
-    return await get_zones(config)
+    return await _client.get_zones(config)
 
 
 class SceneCreateRequest(BaseModel):
@@ -152,11 +145,11 @@ async def create_scene_route(body: SceneCreateRequest) -> Scene:
         # doesn't depend on the scene-creation result, so run both calls
         # concurrently instead of paying for two round-trips in series.
         scene_id, light_ids = await asyncio.gather(
-            create_scene(config, body.name, body.light_ids, body.group_id),
-            get_group_light_ids(config, body.group_id),
+            _client.create_scene(config, body.name, body.light_ids, body.group_id),
+            _client.get_group_light_ids(config, body.group_id),
         )
     else:
-        scene_id = await create_scene(config, body.name, body.light_ids, body.group_id)
+        scene_id = await _client.create_scene(config, body.name, body.light_ids, body.group_id)
         light_ids = body.light_ids
     return Scene(
         id=scene_id, name=body.name, light_count=len(light_ids), light_ids=light_ids, group_id=body.group_id
@@ -170,7 +163,7 @@ class SceneActivateRequest(BaseModel):
 @app.post("/api/scenes/{scene_id}/activate")
 async def activate_scene_route(scene_id: str, body: SceneActivateRequest):
     config = load_config()
-    await activate_scene(config, body.group_id, scene_id)
+    await _client.activate_scene(config, body.group_id, scene_id)
     return {"status": "ok"}
 
 
@@ -187,21 +180,21 @@ class SceneSpeedRequest(BaseModel):
 @app.post("/api/scenes/{scene_id}/play")
 async def play_scene_route(scene_id: str, body: ScenePlayRequest = ScenePlayRequest()):
     config = load_config()
-    await play_scene(config, scene_id, body.speed)
+    await _client.play_scene(config, scene_id, body.speed)
     return {"status": "ok"}
 
 
 @app.post("/api/scenes/{scene_id}/stop")
 async def stop_scene_route(scene_id: str):
     config = load_config()
-    await stop_scene(config, scene_id)
+    await _client.stop_scene(config, scene_id)
     return {"status": "ok"}
 
 
 @app.put("/api/scenes/{scene_id}/speed")
 async def set_scene_speed_route(scene_id: str, body: SceneSpeedRequest):
     config = load_config()
-    await set_scene_speed(config, scene_id, body.speed)
+    await _client.set_scene_speed(config, scene_id, body.speed)
     return {"status": "ok"}
 
 
@@ -268,9 +261,9 @@ async def update_zone_state(zone_id: str, update: ZoneStateUpdate):
         # Explicit on/off (the zone Off button, or the frontend's "drag up
         # from fully off" gesture) — applies to every light in the zone via
         # one group-action PUT, same as before.
-        await set_group_state(config, zone_id, on=update.on, brightness_pct=update.brightness_pct)
+        await _client.set_group_state(config, zone_id, on=update.on, brightness_pct=update.brightness_pct)
     else:
         # A plain brightness drag on an already-partially-on zone shouldn't
         # wake up bulbs the user individually turned off.
-        await set_zone_brightness_for_on_lights(config, zone_id, update.brightness_pct)
+        await _client.set_zone_brightness_for_on_lights(config, zone_id, update.brightness_pct)
     return {"status": "ok"}
