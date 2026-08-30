@@ -1,5 +1,3 @@
-import os
-import tempfile
 import threading
 from pathlib import Path
 from typing import Optional
@@ -55,17 +53,17 @@ def load_config() -> BridgeConfig:
 
 
 def _write_config(config: BridgeConfig) -> None:
-    # Write-then-rename so a crash mid-write can't leave config.yaml
-    # truncated (which would also lose api_key, requiring re-pairing).
-    fd, tmp_path = tempfile.mkstemp(dir=CONFIG_PATH.parent, prefix=".config.yaml.")
-    try:
-        with os.fdopen(fd, "w") as f:
-            yaml.safe_dump(config.model_dump(exclude_none=True), f)
-        os.replace(tmp_path, CONFIG_PATH)
-    except BaseException:
-        if os.path.exists(tmp_path):
-            os.unlink(tmp_path)
-        raise
+    # In prod, config.yaml is bind-mounted into the container as a single
+    # file (see docker-compose.yml's `./backend/config.yaml:/app/config.yaml`),
+    # so its inode can't be atomically swapped via os.replace from inside the
+    # container -- that raises "OSError: [Errno 16] Device or resource busy"
+    # on the mount point. Write the file in place instead: build the full
+    # YAML content in memory first, so a serialization failure can't leave
+    # config.yaml half-written even though this no longer guards against a
+    # process kill mid-write.
+    content = yaml.safe_dump(config.model_dump(exclude_none=True))
+    with CONFIG_PATH.open("w") as f:
+        f.write(content)
 
 
 def update_bridge_ip(ip: str) -> None:
