@@ -14,4 +14,7 @@ services:
     environment:
       CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:5173}"
     volumes:
-      - ./backend/config.yaml:/app/config.yaml
+      # A directory mount, not a single-file mount -- lets config.py's
+      # tempfile+os.replace do a real atomic swap from inside the container
+      # (a single-file bind mount can't have its inode replaced; see #74).
+      - ./backend/data:/app/data
