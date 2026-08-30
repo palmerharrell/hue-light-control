@@ -85,6 +85,7 @@ def write_config(ip: str, api_key: str) -> None:
         with CONFIG_PATH.open() as f:
             existing = yaml.safe_load(f) or {}
     existing.update({"bridge_ip": ip, "api_key": api_key})
+    CONFIG_PATH.parent.mkdir(parents=True, exist_ok=True)
     with CONFIG_PATH.open("w") as f:
         yaml.safe_dump(existing, f)
 

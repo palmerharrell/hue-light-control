@@ -7,11 +7,14 @@ services:
     # over 127.0.0.1 without publishing/mapping a port.
     network_mode: host
     # CORS_ORIGIN is supplied by a .env file placed by hand on the deploy
-    # target (same treatment as backend/config.yaml — never synced by
+    # target (same treatment as backend/data/config.yaml — never synced by
     # deploy.sh, never committed, since it contains the real LAN address).
     # Falls back to the Vite dev origin so `docker compose up` still works
     # locally without one.
     environment:
       CORS_ORIGIN: "${CORS_ORIGIN:-http://localhost:5173}"
     volumes:
-      - ./backend/config.yaml:/app/config.yaml
+      # A directory mount, not a single-file mount -- lets config.py's
+      # tempfile+os.replace do a real atomic swap from inside the container
+      # (a single-file bind mount can't have its inode replaced; see #74).
+      - ./backend/data:/app/data
