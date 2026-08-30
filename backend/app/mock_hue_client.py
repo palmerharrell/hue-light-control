@@ -17,7 +17,7 @@ a demo.
 
 from typing import Optional
 
-from app.hue_client import Light, Scene, Zone
+from app.hue_client import BridgeUnreachable, Light, Scene, Zone
 
 _lights: dict[str, Light] = {
     # Living Room: Extended color
@@ -47,6 +47,7 @@ _zones: dict[str, Zone] = {
     "3": Zone(id="3", name="Kitchen", light_count=3, light_ids=["7", "8", "9"]),
     "4": Zone(id="4", name="Hallway", light_count=2, light_ids=["10", "11"]),
     "5": Zone(id="5", name="Office", light_count=1, light_ids=["13"]),
+    "6": Zone(id="6", name="Closet", light_count=1, light_ids=["12"]),
 }
 
 _scenes: dict[str, Scene] = {
@@ -98,6 +99,8 @@ async def get_zones(config) -> list[Zone]:
 
 async def create_scene(config, name: str, light_ids: list[str], group_id: Optional[str] = None) -> str:
     global _next_scene_id
+    if group_id is not None and group_id not in _zones:
+        raise BridgeUnreachable(f"zone {group_id} does not exist")
     scene_id = str(_next_scene_id)
     _next_scene_id += 1
     resolved_light_ids = _zones[group_id].light_ids if group_id is not None else light_ids
