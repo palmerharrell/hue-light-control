@@ -233,7 +233,13 @@
     }
   }
 
-  onMount(() => {
+  onMount(async () => {
+    // Give a drifted bridge IP a chance to self-heal (see
+    // backend/app/bridge_discovery.py's ensure_bridge_reachable) before the
+    // panels below fire their own requests against a possibly-stale IP.
+    // The result isn't used directly — failures fall back to each panel's
+    // existing error + Retry UI.
+    await fetchJson('/api/health').catch(() => {})
     loadLights()
     loadScenes()
     loadZones()

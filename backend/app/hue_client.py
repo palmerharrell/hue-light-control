@@ -7,15 +7,10 @@ from typing import Optional
 import httpx
 from pydantic import BaseModel
 
-from app.bridge_discovery import rediscover_bridge_ip
-from app.config import BridgeConfig, load_config, update_bridge_ip
+from app.bridge_discovery import resolve_working_bridge_ip
+from app.config import BridgeConfig
 
 logger = logging.getLogger(__name__)
-
-# Serializes rediscovery so concurrent requests (e.g. the frontend's
-# lights + scenes calls firing together) don't each run their own SSDP/cloud
-# search and race to write config.yaml.
-_rediscovery_lock = asyncio.Lock()
 
 
 class BridgeNotConfigured(Exception):
@@ -272,6 +267,13 @@ async def _request_bridge(
 async def _bridge_request(
     config: BridgeConfig, path: str, *, method: str = "GET", json_body: Optional[dict] = None
 ) -> dict:
+    # The frontend now runs a proactive verify-and-repair check
+    # (bridge_discovery.ensure_bridge_reachable, via /api/health) on page
+    # load, so a drifted IP is typically already fixed before any panel gets
+    # here. This path remains for drift that happens mid-session and for a
+    # genuine network-level failure — see the HTTPStatusError handling below
+    # for why a merely-rejected request doesn't also trigger rediscovery.
+    #
     # On a genuine network failure, the retry path below blindly re-sends
     # the same json_body against a rediscovered/newly-current IP. That's
     # fine for idempotent methods (GET, and PUT writes like "set brightness
@@ -303,36 +305,21 @@ async def _bridge_request(
         if method == "POST":
             raise BridgeUnreachable("could not reach the bridge") from exc
 
-    async with _rediscovery_lock:
-        # A concurrent request may have already rediscovered and persisted a
-        # working IP while we were waiting for the lock — try that first.
-        current_ip = load_config().bridge_ip
-        if current_ip and current_ip != config.bridge_ip:
-            try:
-                return await _request_bridge(current_ip, config.api_key, path, method=method, json_body=json_body)
-            except httpx.HTTPStatusError as exc:
-                logger.warning("Bridge at %s rejected the request: %s", current_ip, exc)
-                raise BridgeUnreachable("bridge rejected the request") from exc
-            except httpx.HTTPError:
-                pass
+    # resolve_working_bridge_ip reuses a concurrent caller's already-verified
+    # fix if one just landed (e.g. the frontend's proactive health check),
+    # otherwise runs SSDP/cloud discovery itself and persists the result.
+    new_ip = await resolve_working_bridge_ip(config.bridge_ip, config.api_key)
+    if new_ip is None:
+        raise BridgeUnreachable("could not reach the bridge")
 
-        new_ip = await rediscover_bridge_ip(config.api_key)
-        if new_ip is None:
-            raise BridgeUnreachable("could not reach the bridge")
-
-        try:
-            data = await _request_bridge(new_ip, config.api_key, path, method=method, json_body=json_body)
-        except httpx.HTTPStatusError as exc:
-            logger.warning("Bridge at %s rejected the request: %s", new_ip, exc)
-            raise BridgeUnreachable("bridge rejected the request") from exc
-        except httpx.HTTPError as exc:
-            logger.warning("Rediscovered bridge at %s also unreachable: %s", new_ip, exc)
-            raise BridgeUnreachable("could not reach the bridge") from exc
-
-        if new_ip != config.bridge_ip:
-            logger.info("Bridge IP changed (%s -> %s), updating config.yaml", config.bridge_ip, new_ip)
-            update_bridge_ip(new_ip)
-        return data
+    try:
+        return await _request_bridge(new_ip, config.api_key, path, method=method, json_body=json_body)
+    except httpx.HTTPStatusError as exc:
+        logger.warning("Bridge at %s rejected the request: %s", new_ip, exc)
+        raise BridgeUnreachable("bridge rejected the request") from exc
+    except httpx.HTTPError as exc:
+        logger.warning("Rediscovered bridge at %s also unreachable: %s", new_ip, exc)
+        raise BridgeUnreachable("could not reach the bridge") from exc
 
 
 async def _request_bridge_v2(

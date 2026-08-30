@@ -74,7 +74,7 @@ async def test_status_error_skips_rediscovery(monkeypatch):
     async def fail_if_called(api_key):
         raise AssertionError("rediscovery should not run for a request-validation error")
 
-    monkeypatch.setattr("app.hue_client.rediscover_bridge_ip", fail_if_called)
+    monkeypatch.setattr("app.bridge_discovery.rediscover_bridge_ip", fail_if_called)
 
     respx.put(f"{BRIDGE_URL}/lights/1/state").mock(return_value=Response(400, json={"error": "bad request"}))
 
@@ -88,13 +88,13 @@ async def test_network_error_triggers_rediscovery(monkeypatch):
     # should still trigger the rediscovery/retry path.
     config = BridgeConfig(bridge_ip="192.168.x.x", api_key="test-api-key")
 
-    monkeypatch.setattr("app.hue_client.load_config", lambda: config)
-    monkeypatch.setattr("app.hue_client.update_bridge_ip", lambda ip: None)
+    monkeypatch.setattr("app.bridge_discovery.load_config", lambda: config)
+    monkeypatch.setattr("app.bridge_discovery.update_bridge_ip", lambda ip: None)
 
     async def fake_rediscover(api_key):
         return "192.168.x.y"
 
-    monkeypatch.setattr("app.hue_client.rediscover_bridge_ip", fake_rediscover)
+    monkeypatch.setattr("app.bridge_discovery.rediscover_bridge_ip", fake_rediscover)
 
     respx.put(f"{BRIDGE_URL}/lights/1/state").mock(side_effect=httpx.ConnectError("connection refused"))
     respx.put("http://192.168.x.y/api/test-api-key/lights/1/state").mock(
@@ -118,7 +118,7 @@ async def test_post_network_error_skips_rediscovery(monkeypatch):
     async def fail_if_called(api_key):
         raise AssertionError("rediscovery should not run for a POST network error")
 
-    monkeypatch.setattr("app.hue_client.rediscover_bridge_ip", fail_if_called)
+    monkeypatch.setattr("app.bridge_discovery.rediscover_bridge_ip", fail_if_called)
 
     respx.post(f"{BRIDGE_URL}/scenes").mock(side_effect=httpx.ConnectError("connection refused"))
 
