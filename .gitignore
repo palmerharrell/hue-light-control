@@ -6,6 +6,10 @@ CLAUDE.md
 # Local-only planning/analysis docs — not for the public repo.
 docs/
 
+# Claude Design handoff packages (design prototypes + reference screenshots
+# of the running app) — local working material, not app source.
+design_handoff_*/
+
 # Real Hue bridge credentials for local dev / deployment — never committed.
 .env
 .env.*
