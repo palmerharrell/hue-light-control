@@ -1,5 +1,6 @@
 <script>
   import { onMount } from 'svelte'
+  import ClassicTheme from './ClassicTheme.svelte'
   import LightCard from './LightCard.svelte'
   import SceneCard from './SceneCard.svelte'
   import ZoneBrightnessSlider from './ZoneBrightnessSlider.svelte'
@@ -355,6 +356,23 @@
     }
   }
 
+  // Classic theme only (issue #77) — the other themes have no "all lights"
+  // or "overall brightness" control, so these don't exist above this point.
+  // Both loop the existing per-light endpoint rather than adding a bulk
+  // backend route; toggleLight/setLightBrightness already carry their own
+  // optimistic-update-with-revert per light, so Promise.all here is safe —
+  // a single light's failure doesn't affect the others.
+  async function allLightsOn(on) {
+    await Promise.all(lights.map((light) => toggleLight(light.id, on)))
+  }
+
+  // Applies to every light currently on, not the whole fixture — mirrors
+  // ZoneBrightnessSlider's turnOn distinction (see setZoneBrightness): an
+  // off light isn't woken up just because the master slider moved.
+  async function setOverallBrightness(pct) {
+    await Promise.all(lights.filter((light) => light.on).map((light) => setLightBrightness(light.id, pct)))
+  }
+
   // Same optimistic-update-with-revert-if-still-latest pattern as
   // setLightBrightness, tracked separately so an in-flight color request
   // isn't stomped by a color-temp request racing it (or vice versa).
@@ -568,6 +586,24 @@
   }
 </script>
 
+{#if activeTheme?.id === 'classic'}
+  <ClassicTheme
+    {lights}
+    {zones}
+    {scenes}
+    {themeId}
+    {builtInThemes}
+    onThemeChange={(id) => (themeId = id)}
+    onToggleLight={toggleLight}
+    onSetBrightness={setLightBrightness}
+    onZoneOn={setZoneOn}
+    onActivateScene={activateScene}
+    onRefresh={() => Promise.all([loadLights(), loadScenes(), loadZones()])}
+    onAllOn={() => allLightsOn(true)}
+    onAllOff={() => allLightsOn(false)}
+    onOverallBrightness={setOverallBrightness}
+  />
+{:else}
 <main>
   <div class="page-header">
     <div>
@@ -745,6 +781,7 @@
     </section>
   </div>
 </main>
+{/if}
 
 <style>
   .page-header {

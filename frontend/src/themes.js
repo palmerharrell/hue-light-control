@@ -134,6 +134,38 @@ export const builtInThemes = [
       '--color-scheme': 'light',
     },
   },
+  {
+    // Classic (issue #77) recreates the old app's layout wholesale via
+    // ClassicTheme.svelte, not via these tokens — it renders its own
+    // hardcoded colors, not var(--token) references. Still needs an entry
+    // here (and REQUIRED_TOKENS filled in) so it shows up in allThemes/the
+    // theme picker and survives themes.js's own validation; the values
+    // below match Classic's page background/ink so nothing looks broken in
+    // the instant before App.svelte swaps in ClassicTheme.
+    id: 'classic',
+    name: 'Classic',
+    tokens: {
+      '--bg': '#0d181f',
+      '--surface': '#69a3a4',
+      '--surface-alt': '#15222c',
+      '--border': '#16242e',
+      '--text': '#eef4f7',
+      '--text-muted': '#8fb9bf',
+      '--accent': '#5b7f96',
+      '--accent-text': '#eef4f7',
+      '--accent-soft-bg': '#3f5a6d',
+      '--accent-soft-border': '#8fb9bf',
+      '--shadow-color': 'rgba(0, 0, 0, 0.45)',
+      '--error-bg': '#3d211f',
+      '--error-text': '#f0958a',
+      '--font-family': '"Helvetica Neue", Helvetica, -apple-system, system-ui, sans-serif',
+      '--radius-sm': '0.5rem',
+      '--radius-md': '0.75rem',
+      '--radius-lg': '1rem',
+      '--radius-pill': '999px',
+      '--color-scheme': 'dark',
+    },
+  },
 ]
 
 export const DEFAULT_THEME_ID = 'default-dark'
