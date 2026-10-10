@@ -538,6 +538,9 @@
   function restartColorCycleStep() {
     if (!colorCycle.playing) return
     clearTimeout(colorCycleTimer)
+    // New run id so a step still awaiting the bridge from before the change
+    // drops its result instead of racing the new step (quick palette flips).
+    colorCycleRun += 1
     colorCycleStep(colorCycleRun)
   }
 
