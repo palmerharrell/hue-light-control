@@ -16,6 +16,13 @@
       : 100
   )
 
+  // [palette key, button label] — keys match HUE_RANGES in App.svelte.
+  const PALETTES = [
+    ['all', 'Randomize colors'],
+    ['warm', 'Randomize warm'],
+    ['cool', 'Randomize cool'],
+  ]
+
   let pending = $state(false)
   let error = $state(null)
 
@@ -36,15 +43,15 @@
 <div class="color-bulbs-control">
   <div class="title">Color bulbs ({colorLights.length})</div>
   <div class="color-actions">
-    <button type="button" class="randomize-button" disabled={pending} onclick={() => runUpdate(() => onRandomize('all'))}>
-      Randomize colors
-    </button>
-    <button type="button" class="randomize-button" disabled={pending} onclick={() => runUpdate(() => onRandomize('warm'))}>
-      Randomize warm
-    </button>
-    <button type="button" class="randomize-button" disabled={pending} onclick={() => runUpdate(() => onRandomize('cool'))}>
-      Randomize cool
-    </button>
+    <!-- Own wrapping group so only these buttons wrap on a narrow card; the
+         play toggle stays beside them instead of dropping onto its own line. -->
+    <div class="randomize-buttons">
+      {#each PALETTES as [palette, label] (palette)}
+        <button type="button" class="randomize-button" disabled={pending} onclick={() => runUpdate(() => onRandomize(palette))}>
+          {label}
+        </button>
+      {/each}
+    </div>
     <button
       type="button"
       class="play-toggle"
@@ -96,8 +103,13 @@
 
   .color-actions {
     display: flex;
-    flex-wrap: wrap;
     align-items: center;
+    gap: 0.5rem;
+  }
+
+  .randomize-buttons {
+    display: flex;
+    flex-wrap: wrap;
     gap: 0.5rem;
   }
 
