@@ -1,6 +1,7 @@
 <script>
   import { onMount } from 'svelte'
   import ClassicTheme from './ClassicTheme.svelte'
+  import ColorBulbsControl from './ColorBulbsControl.svelte'
   import LightCard from './LightCard.svelte'
   import SceneCard from './SceneCard.svelte'
   import ZoneBrightnessSlider from './ZoneBrightnessSlider.svelte'
@@ -423,6 +424,36 @@
     }
   }
 
+  // Color bulbs control (issue #82) — normal theme only. Like the Classic
+  // helpers above, these loop the existing per-light handlers rather than
+  // adding a bulk backend route, so each bulb keeps its own optimistic
+  // update/revert and a single failure doesn't affect the others. Both wake
+  // off bulbs (setLightColor/setLightBrightness send on: true) — the bridge
+  // rejects color changes on an off bulb anyway.
+  let colorLights = $derived(lights.filter((light) => light.supports_color))
+
+  // Random hue at full saturation and mid lightness, so results are vivid
+  // rather than the muddy/washed-out colors a fully random RGB triple gives.
+  function randomVividColor() {
+    const hue = Math.random() * 360
+    const f = (n) => {
+      const k = (n + hue / 30) % 12
+      const channel = 0.5 - 0.5 * Math.max(-1, Math.min(k - 3, 9 - k, 1))
+      return Math.round(channel * 255)
+        .toString(16)
+        .padStart(2, '0')
+    }
+    return `#${f(0)}${f(8)}${f(4)}`
+  }
+
+  async function randomizeColorBulbs() {
+    await Promise.all(colorLights.map((light) => setLightColor(light.id, randomVividColor())))
+  }
+
+  async function setColorBulbsBrightness(pct) {
+    await Promise.all(colorLights.map((light) => setLightBrightness(light.id, pct)))
+  }
+
   // Which zone's "New Scene" dialog is open, if any (issue #30 — one button
   // per zone rather than a single global one).
   let createFormZone = $state(null)
@@ -673,6 +704,9 @@
         {:else if lights.length === 0}
           <p>No bulbs found.</p>
         {:else}
+          {#if colorLights.length > 0}
+            <ColorBulbsControl {colorLights} onRandomize={randomizeColorBulbs} onSetBrightness={setColorBulbsBrightness} />
+          {/if}
           <div class="bulbs-list">
             {#each lights as light (light.id)}
               <LightCard
