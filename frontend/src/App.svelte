@@ -442,8 +442,19 @@
 
   // Random hue at full saturation and mid lightness, so results are vivid
   // rather than the muddy/washed-out colors a fully random RGB triple gives.
-  function randomVividColor() {
-    const hue = Math.random() * 360
+  //
+  // `palette` narrows the hue to a family (issue #88): warm is reds through
+  // yellows plus pinks, cool is greens/teals through blues and purples. Ranges
+  // are [start, end) in degrees; warm starts below 0 so it wraps through red.
+  const HUE_RANGES = {
+    all: [0, 360],
+    warm: [-30, 60],
+    cool: [150, 270],
+  }
+
+  function randomVividColor(palette = 'all') {
+    const [start, end] = HUE_RANGES[palette]
+    const hue = (((start + Math.random() * (end - start)) % 360) + 360) % 360
     const f = (n) => {
       const k = (n + hue / 30) % 12
       const channel = 0.5 - 0.5 * Math.max(-1, Math.min(k - 3, 9 - k, 1))
@@ -454,8 +465,8 @@
     return `#${f(0)}${f(8)}${f(4)}`
   }
 
-  async function randomizeColorBulbs() {
-    await Promise.all(colorLights.map((light) => setLightColor(light.id, randomVividColor())))
+  async function randomizeColorBulbs(palette = 'all') {
+    await Promise.all(colorLights.map((light) => setLightColor(light.id, randomVividColor(palette))))
   }
 
   async function setColorBulbsBrightness(pct) {
