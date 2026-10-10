@@ -161,6 +161,22 @@ async def test_set_light_color_with_transition(client):
     assert "xy" in body
 
 
+@pytest.mark.parametrize(
+    "transition_ms, expected",
+    [(0, 0), (49, 0), (50, 1), (250, 3), (350, 4), (60000, 600)],
+)
+@respx.mock
+async def test_set_light_state_transition_rounds_half_up(client, transition_ms, expected):
+    state_route = respx.put(f"{BRIDGE_URL}/lights/1/state").mock(
+        return_value=Response(200, json=[{"success": {"/lights/1/state/on": True}}])
+    )
+
+    resp = await client.put("/api/lights/1/state", json={"on": True, "transition_ms": transition_ms})
+
+    assert resp.status_code == 200
+    assert json.loads(state_route.calls.last.request.content)["transitiontime"] == expected
+
+
 async def test_set_light_state_transition_alone_is_400(client):
     resp = await client.put("/api/lights/1/state", json={"transition_ms": 1000})
 

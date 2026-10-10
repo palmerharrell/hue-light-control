@@ -553,7 +553,8 @@ async def set_light_state(
     if transition_ms is not None:
         # CLIP v1's `transitiontime` is in multiples of 100 ms (the bridge
         # defaults to 4 = 400 ms when it's omitted).
-        body["transitiontime"] = round(transition_ms / 100)
+        # Integer math rather than round(), which rounds halves to even.
+        body["transitiontime"] = (transition_ms + 50) // 100
     await _bridge_request(config, f"lights/{light_id}/state", method="PUT", json_body=body)
 
 

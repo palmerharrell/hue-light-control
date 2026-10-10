@@ -481,17 +481,22 @@
   // pause (or a pause + play) can tell it's stale and bail out.
   let colorCycleRun = 0
 
-  async function colorCycleStep(run) {
+  // wakeAll is only set for the first step after pressing play, which turns
+  // every color bulb on like Randomize does. Later steps skip bulbs that are
+  // off, since setLightColor sends on: true and would otherwise undo the user
+  // switching a bulb off mid-cycle.
+  async function colorCycleStep(run, wakeAll = false) {
     if (run !== colorCycleRun) return
     const stepMs = colorCycleStepMs(colorCycle.speed)
     // Schedule the next step before awaiting this one so request latency
     // doesn't stretch the interval and leave bulbs sitting on a finished fade.
     colorCycleTimer = setTimeout(() => colorCycleStep(run), stepMs)
+    const targets = wakeAll ? colorLights : colorLights.filter((light) => light.on)
     const results = await Promise.all(
-      colorLights.map((light) => setLightColor(light.id, randomVividColor(), stepMs))
+      targets.map((light) => setLightColor(light.id, randomVividColor(), stepMs))
     )
     // Individual failures already show on their light and the loop carries on;
-    // only give up when nothing worked (bridge down, no color bulbs left).
+    // only give up when nothing worked (bridge down, every color bulb off or gone).
     if (run === colorCycleRun && !results.some(Boolean)) stopColorCycle()
   }
 
@@ -499,7 +504,7 @@
     if (colorCycle.playing) return
     colorCycle.playing = true
     colorCycleRun += 1
-    colorCycleStep(colorCycleRun)
+    colorCycleStep(colorCycleRun, true)
   }
 
   // Bulbs finish the fade already in progress and then hold that color.
