@@ -73,7 +73,9 @@ async def set_light_state(
     brightness_pct: Optional[int] = None,
     color: Optional[str] = None,
     color_temp_pct: Optional[int] = None,
+    transition_ms: Optional[int] = None,
 ) -> None:
+    # transition_ms is accepted for signature parity; the mock applies state instantly.
     light = _lights.get(light_id)
     if light is None:
         return

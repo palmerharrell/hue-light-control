@@ -77,6 +77,12 @@ class LightStateUpdate(BaseModel):
     # duplicated here.
     color: Optional[str] = Field(default=None, pattern=r"^#[0-9a-fA-F]{6}$")
     color_temp_pct: Optional[int] = Field(default=None, ge=0, le=100)
+    # Fade duration for this change, in milliseconds (the bridge's
+    # `transitiontime`, which is in 100 ms units — see hue_client.set_light_state).
+    # Not a state change on its own, so it doesn't satisfy the "must set
+    # something" check below. Capped at 60 s; the play-colors loop uses it to
+    # glide between colors.
+    transition_ms: Optional[int] = Field(default=None, ge=0, le=60000)
 
 
 @app.put("/api/lights/{light_id}/state")
@@ -91,6 +97,7 @@ async def update_light_state(light_id: str, update: LightStateUpdate):
         brightness_pct=update.brightness_pct,
         color=update.color,
         color_temp_pct=update.color_temp_pct,
+        transition_ms=update.transition_ms,
     )
     return {"status": "ok"}
 

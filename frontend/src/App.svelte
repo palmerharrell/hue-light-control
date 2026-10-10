@@ -380,9 +380,13 @@
   const latestColorRequest = new Map()
   const latestColorTempRequest = new Map()
 
-  async function setLightColor(lightId, hex) {
+  // transitionMs (optional) makes the bulb fade to the color over that long
+  // instead of the bridge's default ~400 ms. Resolves to whether the request
+  // succeeded — the failure is already surfaced on the light itself, so the
+  // return value only exists for callers (the color cycle) that need to know.
+  async function setLightColor(lightId, hex, transitionMs) {
     const light = lights.find((l) => l.id === lightId)
-    if (!light) return
+    if (!light) return false
     const prev = { on: light.on, color: light.color }
     const token = Symbol()
     latestColorRequest.set(lightId, token)
@@ -390,12 +394,16 @@
     light.on = true
     light.toggleError = null
     try {
-      await putJson(`/api/lights/${lightId}/state`, { color: hex, on: true })
+      const body = { color: hex, on: true }
+      if (transitionMs != null) body.transition_ms = transitionMs
+      await putJson(`/api/lights/${lightId}/state`, body)
+      return true
     } catch (err) {
       if (latestColorRequest.get(lightId) === token) {
         Object.assign(light, prev)
         light.toggleError = err.message
       }
+      return false
     }
   }
 
@@ -453,6 +461,80 @@
   async function setColorBulbsBrightness(pct) {
     await Promise.all(colorLights.map((light) => setLightBrightness(light.id, pct)))
   }
+
+  // Color cycle (issue #85) — the Hue dynamic-scene "play" idea applied to
+  // random colors: on each step every color bulb is told to fade to a fresh
+  // random color over the whole step, so they glide continuously. Driven from
+  // the browser (a timer), not the bridge, so it stops if this tab closes.
+  // `speed` is 0-1 like a scene's, higher = faster; the step length runs from
+  // 30 s at 0 down to 1 s at 1, geometrically so the slider feels even.
+  const COLOR_CYCLE_SLOWEST_MS = 30000
+  const COLOR_CYCLE_FASTEST_MS = 1000
+
+  function colorCycleStepMs(speed) {
+    return Math.round(COLOR_CYCLE_SLOWEST_MS * (COLOR_CYCLE_FASTEST_MS / COLOR_CYCLE_SLOWEST_MS) ** speed)
+  }
+
+  let colorCycle = $state({ playing: false, speed: 0.5 })
+  let colorCycleTimer = null
+  // Bumped on every start/stop so a step still awaiting the bridge after a
+  // pause (or a pause + play) can tell it's stale and bail out.
+  let colorCycleRun = 0
+
+  // wakeAll is only set for the first step after pressing play, which turns
+  // every color bulb on like Randomize does. Later steps skip bulbs that are
+  // off, since setLightColor sends on: true and would otherwise undo the user
+  // switching a bulb off mid-cycle.
+  async function colorCycleStep(run, wakeAll = false) {
+    if (run !== colorCycleRun) return
+    const stepMs = colorCycleStepMs(colorCycle.speed)
+    // Schedule the next step before awaiting this one so request latency
+    // doesn't stretch the interval and leave bulbs sitting on a finished fade.
+    colorCycleTimer = setTimeout(() => colorCycleStep(run), stepMs)
+    const targets = wakeAll ? colorLights : colorLights.filter((light) => light.on)
+    const results = await Promise.all(
+      targets.map((light) => setLightColor(light.id, randomVividColor(), stepMs))
+    )
+    // Individual failures already show on their light and the loop carries on;
+    // only give up when nothing worked (bridge down, every color bulb off or gone).
+    if (run === colorCycleRun && !results.some(Boolean)) stopColorCycle()
+  }
+
+  function startColorCycle() {
+    if (colorCycle.playing) return
+    colorCycle.playing = true
+    colorCycleRun += 1
+    colorCycleStep(colorCycleRun, true)
+  }
+
+  // Bulbs finish the fade already in progress and then hold that color.
+  function stopColorCycle() {
+    colorCycleRun += 1
+    clearTimeout(colorCycleTimer)
+    colorCycle.playing = false
+  }
+
+  function toggleColorCycle() {
+    if (colorCycle.playing) stopColorCycle()
+    else startColorCycle()
+  }
+
+  function setColorCycleSpeed(speed) {
+    colorCycle.speed = speed
+    if (!colorCycle.playing) return
+    // Restart the step right away: the pending timer was sized for the old
+    // speed, which at the slow end could be 30 s away.
+    clearTimeout(colorCycleTimer)
+    colorCycleStep(colorCycleRun)
+  }
+
+  // The control is normal-theme-only and needs color bulbs; if either goes
+  // away (switching to Classic, bulbs list emptied) the loop must not keep
+  // running invisibly. Also stops it if the app is torn down.
+  $effect(() => {
+    if (colorLights.length === 0 || activeTheme?.id === 'classic') stopColorCycle()
+  })
+  $effect(() => stopColorCycle)
 
   // Which zone's "New Scene" dialog is open, if any (issue #30 — one button
   // per zone rather than a single global one).
@@ -705,7 +787,15 @@
           <p>No bulbs found.</p>
         {:else}
           {#if colorLights.length > 0}
-            <ColorBulbsControl {colorLights} onRandomize={randomizeColorBulbs} onSetBrightness={setColorBulbsBrightness} />
+            <ColorBulbsControl
+              {colorLights}
+              playing={colorCycle.playing}
+              speed={colorCycle.speed}
+              onRandomize={randomizeColorBulbs}
+              onSetBrightness={setColorBulbsBrightness}
+              onTogglePlay={toggleColorCycle}
+              onSpeedChange={setColorCycleSpeed}
+            />
           {/if}
           <div class="bulbs-list">
             {#each lights as light (light.id)}

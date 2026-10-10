@@ -145,3 +145,45 @@ async def test_set_light_state_invalid_color_is_422(client):
     resp = await client.put("/api/lights/1/state", json={"color": "not-a-color"})
 
     assert resp.status_code == 422
+
+
+@respx.mock
+async def test_set_light_color_with_transition(client):
+    state_route = respx.put(f"{BRIDGE_URL}/lights/1/state").mock(
+        return_value=Response(200, json=[{"success": {"/lights/1/state/xy": [0.5, 0.4]}}])
+    )
+
+    resp = await client.put("/api/lights/1/state", json={"color": "#ff0000", "transition_ms": 2500})
+
+    assert resp.status_code == 200
+    body = json.loads(state_route.calls.last.request.content)
+    assert body["transitiontime"] == 25
+    assert "xy" in body
+
+
+@pytest.mark.parametrize(
+    "transition_ms, expected",
+    [(0, 0), (49, 0), (50, 1), (250, 3), (350, 4), (60000, 600)],
+)
+@respx.mock
+async def test_set_light_state_transition_rounds_half_up(client, transition_ms, expected):
+    state_route = respx.put(f"{BRIDGE_URL}/lights/1/state").mock(
+        return_value=Response(200, json=[{"success": {"/lights/1/state/on": True}}])
+    )
+
+    resp = await client.put("/api/lights/1/state", json={"on": True, "transition_ms": transition_ms})
+
+    assert resp.status_code == 200
+    assert json.loads(state_route.calls.last.request.content)["transitiontime"] == expected
+
+
+async def test_set_light_state_transition_alone_is_400(client):
+    resp = await client.put("/api/lights/1/state", json={"transition_ms": 1000})
+
+    assert resp.status_code == 400
+
+
+async def test_set_light_state_transition_too_long_is_422(client):
+    resp = await client.put("/api/lights/1/state", json={"on": True, "transition_ms": 60001})
+
+    assert resp.status_code == 422
