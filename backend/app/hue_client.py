@@ -539,6 +539,7 @@ async def set_light_state(
     brightness_pct: Optional[int] = None,
     color: Optional[str] = None,
     color_temp_pct: Optional[int] = None,
+    transition_ms: Optional[int] = None,
 ) -> None:
     body = {}
     if on is not None:
@@ -549,6 +550,10 @@ async def set_light_state(
         body["xy"] = list(_hex_to_xy(color))
     if color_temp_pct is not None:
         body["ct"] = _ct_pct_to_mired(color_temp_pct)
+    if transition_ms is not None:
+        # CLIP v1's `transitiontime` is in multiples of 100 ms (the bridge
+        # defaults to 4 = 400 ms when it's omitted).
+        body["transitiontime"] = round(transition_ms / 100)
     await _bridge_request(config, f"lights/{light_id}/state", method="PUT", json_body=body)
 
 

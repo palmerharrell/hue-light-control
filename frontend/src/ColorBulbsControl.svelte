@@ -2,7 +2,9 @@
   import BrightnessSlider from './BrightnessSlider.svelte'
 
   // `colorLights` is already filtered to supports_color bulbs by the caller.
-  let { colorLights, onRandomize, onSetBrightness } = $props()
+  // `playing`/`speed` (0-1, like a scene's) describe the color cycle owned by
+  // App.svelte: while playing, the bulbs keep fading into new random colors.
+  let { colorLights, playing, speed, onRandomize, onSetBrightness, onTogglePlay, onSpeedChange } = $props()
 
   // Average across just the bulbs that are on, like ZoneBrightnessSlider —
   // an off bulb's stored brightness isn't what the user is looking at.
@@ -33,9 +35,31 @@
 
 <div class="color-bulbs-control">
   <div class="title">Color bulbs ({colorLights.length})</div>
-  <button type="button" class="randomize-button" disabled={pending} onclick={() => runUpdate(onRandomize)}>
-    Randomize colors
-  </button>
+  <div class="color-actions">
+    <button type="button" class="randomize-button" disabled={pending} onclick={() => runUpdate(onRandomize)}>
+      Randomize colors
+    </button>
+    <button
+      type="button"
+      class="play-toggle"
+      class:playing
+      title={playing ? 'Stop cycling colors' : 'Cycle through random colors'}
+      aria-label={playing ? 'Stop cycling colors' : 'Cycle through random colors'}
+      aria-pressed={playing}
+      onclick={onTogglePlay}
+    >
+      {playing ? '⏸' : '▶'}
+    </button>
+  </div>
+  {#if playing}
+    <BrightnessSlider
+      value={Math.round(speed * 100)}
+      label="Color cycle speed"
+      min={0}
+      showValue={false}
+      onChange={(pct) => onSpeedChange(pct / 100)}
+    />
+  {/if}
   <BrightnessSlider
     value={liveBrightnessPct}
     label="Color bulbs brightness"
@@ -62,6 +86,37 @@
 
   .title {
     font-weight: 600;
+  }
+
+  .color-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+  }
+
+  .play-toggle {
+    flex-shrink: 0;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    font-size: 0.75rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: inherit;
+  }
+
+  .play-toggle:hover {
+    filter: brightness(0.95);
+  }
+
+  .play-toggle.playing {
+    background: var(--accent-soft-bg);
+    border-color: var(--accent-soft-border);
   }
 
   .randomize-button {
