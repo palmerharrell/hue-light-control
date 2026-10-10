@@ -2,9 +2,20 @@
   import BrightnessSlider from './BrightnessSlider.svelte'
 
   // `colorLights` is already filtered to supports_color bulbs by the caller.
-  // `playing`/`speed` (0-1, like a scene's) describe the color cycle owned by
-  // App.svelte: while playing, the bulbs keep fading into new random colors.
-  let { colorLights, playing, speed, onRandomize, onSetBrightness, onTogglePlay, onSpeedChange } = $props()
+  // `playing`/`speed` (0-1, like a scene's)/`palette` describe the color cycle
+  // owned by App.svelte: while playing, the bulbs keep fading into new random
+  // colors drawn from that palette.
+  let {
+    colorLights,
+    playing,
+    speed,
+    palette,
+    onRandomize,
+    onSetBrightness,
+    onTogglePlay,
+    onSpeedChange,
+    onPaletteChange,
+  } = $props()
 
   // Average across just the bulbs that are on, like ZoneBrightnessSlider —
   // an off bulb's stored brightness isn't what the user is looking at.
@@ -16,11 +27,12 @@
       : 100
   )
 
-  // [palette key, button label] — keys match HUE_RANGES in App.svelte.
+  // [palette key, randomize button label, cycle selector label] — keys match
+  // HUE_RANGES in App.svelte.
   const PALETTES = [
-    ['all', 'Randomize colors'],
-    ['warm', 'Randomize warm'],
-    ['cool', 'Randomize cool'],
+    ['all', 'Randomize colors', 'All colors'],
+    ['warm', 'Randomize warm', 'Warm'],
+    ['cool', 'Randomize cool', 'Cool'],
   ]
 
   let pending = $state(false)
@@ -46,8 +58,8 @@
     <!-- Own wrapping group so only these buttons wrap on a narrow card; the
          play toggle stays beside them instead of dropping onto its own line. -->
     <div class="randomize-buttons">
-      {#each PALETTES as [palette, label] (palette)}
-        <button type="button" class="randomize-button" disabled={pending} onclick={() => runUpdate(() => onRandomize(palette))}>
+      {#each PALETTES as [key, label] (key)}
+        <button type="button" class="randomize-button" disabled={pending} onclick={() => runUpdate(() => onRandomize(key))}>
           {label}
         </button>
       {/each}
@@ -64,6 +76,14 @@
       {playing ? '⏸' : '▶'}
     </button>
   </div>
+  <label class="cycle-palette">
+    Cycle palette
+    <select value={palette} onchange={(event) => onPaletteChange(event.currentTarget.value)}>
+      {#each PALETTES as [key, , cycleLabel] (key)}
+        <option value={key}>{cycleLabel}</option>
+      {/each}
+    </select>
+  </label>
   {#if playing}
     <BrightnessSlider
       value={Math.round(speed * 100)}
@@ -105,6 +125,22 @@
     display: flex;
     align-items: center;
     gap: 0.5rem;
+  }
+
+  .cycle-palette {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+    font-size: 0.85rem;
+  }
+
+  .cycle-palette select {
+    font: inherit;
+    padding: 0.2rem 0.5rem;
+    border-radius: var(--radius-pill);
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    color: inherit;
   }
 
   .randomize-buttons {

@@ -486,7 +486,8 @@
     return Math.round(COLOR_CYCLE_SLOWEST_MS * (COLOR_CYCLE_FASTEST_MS / COLOR_CYCLE_SLOWEST_MS) ** speed)
   }
 
-  let colorCycle = $state({ playing: false, speed: 0.5 })
+  // `palette` is a HUE_RANGES key (issue #91), so the cycle can stay warm/cool.
+  let colorCycle = $state({ playing: false, speed: 0.5, palette: 'all' })
   let colorCycleTimer = null
   // Bumped on every start/stop so a step still awaiting the bridge after a
   // pause (or a pause + play) can tell it's stale and bail out.
@@ -503,8 +504,9 @@
     // doesn't stretch the interval and leave bulbs sitting on a finished fade.
     colorCycleTimer = setTimeout(() => colorCycleStep(run), stepMs)
     const targets = wakeAll ? colorLights : colorLights.filter((light) => light.on)
+    const palette = colorCycle.palette
     const results = await Promise.all(
-      targets.map((light) => setLightColor(light.id, randomVividColor(), stepMs))
+      targets.map((light) => setLightColor(light.id, randomVividColor(palette), stepMs))
     )
     // Individual failures already show on their light and the loop carries on;
     // only give up when nothing worked (bridge down, every color bulb off or gone).
@@ -530,13 +532,23 @@
     else startColorCycle()
   }
 
-  function setColorCycleSpeed(speed) {
-    colorCycle.speed = speed
+  // Restart the step right away: the pending timer was sized for the old
+  // speed, which at the slow end could be 30 s away, and a palette change
+  // should be visible now rather than after the current fade.
+  function restartColorCycleStep() {
     if (!colorCycle.playing) return
-    // Restart the step right away: the pending timer was sized for the old
-    // speed, which at the slow end could be 30 s away.
     clearTimeout(colorCycleTimer)
     colorCycleStep(colorCycleRun)
+  }
+
+  function setColorCycleSpeed(speed) {
+    colorCycle.speed = speed
+    restartColorCycleStep()
+  }
+
+  function setColorCyclePalette(palette) {
+    colorCycle.palette = palette
+    restartColorCycleStep()
   }
 
   // The control is normal-theme-only and needs color bulbs; if either goes
@@ -802,10 +814,12 @@
               {colorLights}
               playing={colorCycle.playing}
               speed={colorCycle.speed}
+              palette={colorCycle.palette}
               onRandomize={randomizeColorBulbs}
               onSetBrightness={setColorBulbsBrightness}
               onTogglePlay={toggleColorCycle}
               onSpeedChange={setColorCycleSpeed}
+              onPaletteChange={setColorCyclePalette}
             />
           {/if}
           <div class="bulbs-list">
