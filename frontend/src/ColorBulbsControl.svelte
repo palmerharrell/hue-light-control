@@ -36,8 +36,14 @@
 <div class="color-bulbs-control">
   <div class="title">Color bulbs ({colorLights.length})</div>
   <div class="color-actions">
-    <button type="button" class="randomize-button" disabled={pending} onclick={() => runUpdate(onRandomize)}>
+    <button type="button" class="randomize-button" disabled={pending} onclick={() => runUpdate(() => onRandomize('all'))}>
       Randomize colors
+    </button>
+    <button type="button" class="randomize-button" disabled={pending} onclick={() => runUpdate(() => onRandomize('warm'))}>
+      Randomize warm
+    </button>
+    <button type="button" class="randomize-button" disabled={pending} onclick={() => runUpdate(() => onRandomize('cool'))}>
+      Randomize cool
     </button>
     <button
       type="button"
@@ -90,6 +96,7 @@
 
   .color-actions {
     display: flex;
+    flex-wrap: wrap;
     align-items: center;
     gap: 0.5rem;
   }
