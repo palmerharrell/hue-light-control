@@ -12,7 +12,14 @@
   let submitting = $state(false)
   let error = $state(null)
 
-  let canSubmit = $derived(selectedIds.length > 0 && !submitting)
+  // A scene can vanish from `groups` while the dialog is open (refresh, or
+  // favorited elsewhere); only submit ids the user can still see ticked.
+  let chosenIds = $derived.by(() => {
+    const visible = new Set(groups.flatMap((group) => group.scenes.map((scene) => scene.id)))
+    return selectedIds.filter((id) => visible.has(id))
+  })
+
+  let canSubmit = $derived(chosenIds.length > 0 && !submitting)
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -20,7 +27,7 @@
     submitting = true
     error = null
     try {
-      await onAdd(selectedIds)
+      await onAdd(chosenIds)
       dialogEl?.close()
     } catch (err) {
       error = err.message
@@ -40,13 +47,15 @@
         <legend>Scenes</legend>
         <div class="option-list tall">
           {#each groups as group (group.id)}
-            <div class="option-group-heading">{group.name}</div>
-            {#each group.scenes as scene (scene.id)}
-              <label class="option-row">
-                <input type="checkbox" bind:group={selectedIds} value={scene.id} />
-                {scene.name}
-              </label>
-            {/each}
+            <div class="option-group" role="group" aria-labelledby="favorite-group-{group.id}">
+              <div class="option-group-heading" id="favorite-group-{group.id}">{group.name}</div>
+              {#each group.scenes as scene (scene.id)}
+                <label class="option-row">
+                  <input type="checkbox" bind:group={selectedIds} value={scene.id} />
+                  {scene.name}
+                </label>
+              {/each}
+            </div>
           {/each}
         </div>
       </fieldset>

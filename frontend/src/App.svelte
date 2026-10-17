@@ -290,6 +290,20 @@
     )
   })
 
+  // What the Add to Favorites dialog offers: each real zone (plus "Other")
+  // with only its not-yet-favorited scenes, empty groups dropped.
+  let addFavoriteGroups = $derived.by(() => {
+    const favorited = new Set(favoriteSceneIds)
+    return zoneGroups
+      .filter((group) => !group.isFavorites)
+      .map((group) => ({
+        id: group.id,
+        name: group.name,
+        scenes: group.scenes.filter((scene) => !favorited.has(scene.id)),
+      }))
+      .filter((group) => group.scenes.length > 0)
+  })
+
   // Per-zone-group collapse state (issue #57), keyed by group id. Absent
   // means "use the default" rather than "expanded" — Favorites defaults
   // open, everything else defaults collapsed (issue #58) — so a group only
@@ -855,13 +869,7 @@
       {/if}
       {#if addFavoriteFormOpen}
         <AddFavoriteForm
-          groups={zoneGroups
-            .filter((group) => !group.isFavorites)
-            .map((group) => ({
-              ...group,
-              scenes: group.scenes.filter((scene) => !favoriteSceneIds.includes(scene.id)),
-            }))
-            .filter((group) => group.scenes.length > 0)}
+          groups={addFavoriteGroups}
           onAdd={addFavorites}
           onClose={() => (addFavoriteFormOpen = false)}
         />

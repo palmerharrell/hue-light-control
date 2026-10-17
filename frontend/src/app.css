@@ -117,7 +117,13 @@ main {
   color: var(--text-muted);
 }
 
-.dialog-form .option-group-heading:not(:first-child) {
+.dialog-form .option-group {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.dialog-form .option-group + .option-group {
   margin-top: 0.4rem;
 }
 
