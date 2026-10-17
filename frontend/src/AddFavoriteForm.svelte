@@ -1,9 +1,11 @@
 <script>
   import FormDialog from './FormDialog.svelte'
 
-  // scenes not already in Favorites — the caller (App.svelte) filters this
-  // down before passing it in, same division of labor as CreateSceneForm.
-  let { scenes, onAdd, onClose } = $props()
+  // Zone groups ({ id, name, scenes }) holding only scenes not already in
+  // Favorites, empty groups dropped — the caller (App.svelte) builds this
+  // from its zoneGroups, same division of labor as CreateSceneForm. Grouping
+  // matters because many scenes share a name across zones.
+  let { groups, onAdd, onClose } = $props()
 
   let dialogEl = $state(null)
   let selectedIds = $state([])
@@ -31,17 +33,20 @@
   <form class="dialog-form" onsubmit={handleSubmit}>
     <h2>Add to Favorites</h2>
 
-    {#if scenes.length === 0}
+    {#if groups.length === 0}
       <p class="hint">Every scene is already in Favorites.</p>
     {:else}
       <fieldset class="field">
         <legend>Scenes</legend>
         <div class="option-list tall">
-          {#each scenes as scene (scene.id)}
-            <label class="option-row">
-              <input type="checkbox" bind:group={selectedIds} value={scene.id} />
-              {scene.name}
-            </label>
+          {#each groups as group (group.id)}
+            <div class="option-group-heading">{group.name}</div>
+            {#each group.scenes as scene (scene.id)}
+              <label class="option-row">
+                <input type="checkbox" bind:group={selectedIds} value={scene.id} />
+                {scene.name}
+              </label>
+            {/each}
           {/each}
         </div>
       </fieldset>

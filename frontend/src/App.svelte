@@ -855,7 +855,13 @@
       {/if}
       {#if addFavoriteFormOpen}
         <AddFavoriteForm
-          scenes={scenes.filter((scene) => !favoriteSceneIds.includes(scene.id))}
+          groups={zoneGroups
+            .filter((group) => !group.isFavorites)
+            .map((group) => ({
+              ...group,
+              scenes: group.scenes.filter((scene) => !favoriteSceneIds.includes(scene.id)),
+            }))
+            .filter((group) => group.scenes.length > 0)}
           onAdd={addFavorites}
           onClose={() => (addFavoriteFormOpen = false)}
         />
