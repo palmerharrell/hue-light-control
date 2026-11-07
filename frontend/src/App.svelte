@@ -23,17 +23,27 @@
   let zonesLoading = $state(true)
   let zonesError = $state(null)
 
-  // Favorited scene ids (issue #58) — a local UI preference stored server-
-  // side (see backend/app/main.py's /api/favorites), not bridge data. A
-  // load failure degrades to "no favorites" rather than blocking the rest
-  // of the page, same treatment as zonesError below.
+  // Favorited scene (issue #58) and light (issue #81) ids — a local UI
+  // preference stored server-side (see backend/app/main.py's /api/favorites),
+  // not bridge data. A load failure degrades to "no favorites" rather than
+  // blocking the rest of the page, same treatment as zonesError below.
   let favoriteSceneIds = $state([])
+  let favoriteLightIds = $state([])
   let favoritesError = $state(null)
+  // Adding/removing writes whole id lists back to the server, so it's only
+  // safe once the real saved lists have loaded — otherwise a PUT built from
+  // the empty defaults would overwrite them.
+  let favoritesLoaded = $state(false)
 
   async function loadFavorites() {
     favoritesError = null
     try {
-      favoriteSceneIds = await fetchJson('/api/favorites')
+      const favorites = await fetchJson('/api/favorites')
+      // `?? []` so a response from a mismatched backend version (e.g. mid-
+      // deploy) degrades to "no favorites" instead of crashing the page.
+      favoriteSceneIds = favorites?.scene_ids ?? []
+      favoriteLightIds = favorites?.light_ids ?? []
+      favoritesLoaded = true
     } catch (err) {
       favoritesError = err.message
     }
@@ -255,16 +265,7 @@
   // to load. Every real zone is kept even with no scenes yet (isZone: true),
   // so its "New Scene" button (issue #30) has somewhere to live; "Other"
   // isn't a real zone (no per-zone create button applies to it) and is
-  // dropped when empty.
-  //
-  // Favorites (issue #58) is a virtual zone prepended ahead of every real
-  // one: not backed by a bridge group (isZone: false, so it gets no
-  // ZoneBrightnessSlider — there's no single set of bulbs to control), but
-  // always kept like a real zone (its own "+ Add" button needs somewhere to
-  // live even with zero favorites yet). Its scenes are the actual Scene
-  // objects from `scenes`, in favoriteSceneIds order, so activating one
-  // still goes through that scene's own real group_id — Favorites is just a
-  // curated view, not a separate copy.
+  // dropped when empty. Favorites is not a zone — see favoriteScenes below.
   let zoneGroups = $derived.by(() => {
     const byId = new Map(
       zones.map((zone) => [
@@ -277,25 +278,31 @@
       const group = byId.get(scene.group_id) ?? other
       group.scenes.push(scene)
     }
-    const scenesById = new Map(scenes.map((scene) => [scene.id, scene]))
-    const favorites = {
-      id: 'favorites',
-      name: 'Favorites',
-      scenes: favoriteSceneIds.map((id) => scenesById.get(id)).filter(Boolean),
-      isZone: false,
-      isFavorites: true,
-    }
-    return [favorites, ...byId.values(), other].filter(
-      (group) => group.isZone || group.isFavorites || group.scenes.length > 0
-    )
+    return [...byId.values(), other].filter((group) => group.isZone || group.scenes.length > 0)
+  })
+
+  // Favorites (issues #58, #81) is its own section above the Bulbs/Scenes
+  // layout, not a zone. Both lists are the actual Light/Scene objects, in
+  // favorite-id order, so every control on a favorited card still goes
+  // through that item's own handlers (a scene through its real group_id) —
+  // Favorites is a curated view, not a separate copy. Ids that no longer
+  // resolve (item deleted on the bridge) are skipped, not shown broken.
+  let favoriteScenes = $derived.by(() => {
+    const byId = new Map(scenes.map((scene) => [scene.id, scene]))
+    return favoriteSceneIds.map((id) => byId.get(id)).filter(Boolean)
+  })
+
+  let favoriteLights = $derived.by(() => {
+    const byId = new Map(lights.map((light) => [light.id, light]))
+    return favoriteLightIds.map((id) => byId.get(id)).filter(Boolean)
   })
 
   // What the Add to Favorites dialog offers: each real zone (plus "Other")
-  // with only its not-yet-favorited scenes, empty groups dropped.
-  let addFavoriteGroups = $derived.by(() => {
+  // with only its not-yet-favorited scenes, and the not-yet-favorited
+  // lights; empty groups dropped.
+  let addFavoriteSceneGroups = $derived.by(() => {
     const favorited = new Set(favoriteSceneIds)
     return zoneGroups
-      .filter((group) => !group.isFavorites)
       .map((group) => ({
         id: group.id,
         name: group.name,
@@ -304,14 +311,20 @@
       .filter((group) => group.scenes.length > 0)
   })
 
+  let addFavoriteLights = $derived.by(() => {
+    const favorited = new Set(favoriteLightIds)
+    return lights.filter((light) => !favorited.has(light.id))
+  })
+
+  let favoritesCollapsed = $state(false)
+
   // Per-zone-group collapse state (issue #57), keyed by group id. Absent
-  // means "use the default" rather than "expanded" — Favorites defaults
-  // open, everything else defaults collapsed (issue #58) — so a group only
-  // needs an entry here once the user has actually toggled it.
+  // means "use the default" (collapsed, issue #58) rather than "expanded",
+  // so a group only needs an entry here once the user has actually toggled it.
   let collapsedGroupIds = $state({})
 
   function isGroupCollapsed(groupId) {
-    return collapsedGroupIds[groupId] ?? groupId !== 'favorites'
+    return collapsedGroupIds[groupId] ?? true
   }
 
   function toggleGroupCollapsed(groupId) {
@@ -590,21 +603,27 @@
   let addFavoriteFormOpen = $state(false)
 
   // addFavorites/removeFavorite can be triggered from independent controls
-  // (the Add dialog, and a remove button on each favorited SceneCard) that
+  // (the Add dialog, and a remove button on each favorited card) that
   // don't share an in-flight guard the way a single control's own
   // pending/submitting flag would. Without serializing, two overlapping
-  // calls would each compute `updated` from the same stale favoriteSceneIds
+  // calls would each compute `updated` from the same stale id-list
   // snapshot, and whichever PUT resolves last would silently overwrite the
   // other's change (both locally and in the persisted config.yaml). Queuing
   // every mutation onto one promise chain ensures each only runs (and reads
-  // favoriteSceneIds) after the previous one has fully applied.
+  // the current ids) after the previous one has fully applied.
   let favoritesQueue = Promise.resolve()
 
+  // `computeUpdated` maps the current { scene_ids, light_ids } to a partial
+  // update containing only the lists to change (the backend leaves an
+  // omitted list alone). Everything in one update goes out as a single PUT,
+  // so it applies all-or-nothing.
   function queueFavoritesUpdate(computeUpdated) {
     const run = favoritesQueue.then(async () => {
-      const updated = computeUpdated(favoriteSceneIds)
-      await putJson('/api/favorites', { scene_ids: updated })
-      favoriteSceneIds = updated
+      if (!favoritesLoaded) throw new Error("Favorites haven't loaded yet")
+      const update = computeUpdated({ scene_ids: favoriteSceneIds, light_ids: favoriteLightIds })
+      await putJson('/api/favorites', update)
+      if (update.scene_ids) favoriteSceneIds = update.scene_ids
+      if (update.light_ids) favoriteLightIds = update.light_ids
     })
     // Keep the chain alive even after a failed update — the caller below
     // still sees the rejection via `run`, but the *next* queued mutation
@@ -613,12 +632,25 @@
     return run
   }
 
-  async function addFavorites(sceneIds) {
-    await queueFavoritesUpdate((current) => [...new Set([...current, ...sceneIds])])
+  async function addFavorites(sceneIds, lightIds) {
+    await queueFavoritesUpdate((current) => {
+      const update = {}
+      if (sceneIds.length > 0) update.scene_ids = [...new Set([...current.scene_ids, ...sceneIds])]
+      if (lightIds.length > 0) update.light_ids = [...new Set([...current.light_ids, ...lightIds])]
+      return update
+    })
   }
 
-  async function removeFavorite(sceneId) {
-    await queueFavoritesUpdate((current) => current.filter((id) => id !== sceneId))
+  async function removeFavoriteScene(sceneId) {
+    await queueFavoritesUpdate((current) => ({
+      scene_ids: current.scene_ids.filter((id) => id !== sceneId),
+    }))
+  }
+
+  async function removeFavoriteLight(lightId) {
+    await queueFavoritesUpdate((current) => ({
+      light_ids: current.light_ids.filter((id) => id !== lightId),
+    }))
   }
 
   // Unlike toggleLight, there's no meaningful "prior value" to optimistically
@@ -804,6 +836,66 @@
     <ImportThemeForm onImport={importTheme} onClose={() => (importThemeFormOpen = false)} />
   {/if}
 
+  <section class="favorites-section">
+    <div class="section-header">
+      <button
+        class="collapse-toggle"
+        onclick={() => (favoritesCollapsed = !favoritesCollapsed)}
+        aria-expanded={!favoritesCollapsed}
+        aria-label={favoritesCollapsed ? 'Expand Favorites' : 'Collapse Favorites'}
+      >
+        <span class="chevron" class:collapsed={favoritesCollapsed}>▾</span>
+      </button>
+      <h2>Favorites</h2>
+    </div>
+    {#if addFavoriteFormOpen}
+      <AddFavoriteForm
+        sceneGroups={addFavoriteSceneGroups}
+        lights={addFavoriteLights}
+        onAdd={addFavorites}
+        onClose={() => (addFavoriteFormOpen = false)}
+      />
+    {/if}
+    {#if favoritesError}
+      <p class="error">
+        Couldn't load favorites ({favoritesError}).
+        <button onclick={loadFavorites}>Retry</button>
+      </p>
+    {/if}
+    {#if !favoritesCollapsed}
+      {#if favoritesLoaded && !scenesLoading && !lightsLoading && favoriteScenes.length === 0 && favoriteLights.length === 0}
+        <p class="hint">No favorites yet.</p>
+      {/if}
+      {#if favoriteScenes.length > 0 || favoriteLights.length > 0}
+        <div class="grid">
+          {#each favoriteLights as light (light.id)}
+            <LightCard
+              {light}
+              onToggle={toggleLight}
+              onBrightnessChange={setLightBrightness}
+              onColorChange={setLightColor}
+              onColorTempChange={setLightColorTemp}
+              onRemoveFavorite={removeFavoriteLight}
+            />
+          {/each}
+          {#each favoriteScenes as scene (scene.id)}
+            <SceneCard
+              {scene}
+              onActivate={activateScene}
+              onPlay={playScene}
+              onStop={stopScene}
+              onSpeedChange={setSceneSpeed}
+              onRemoveFavorite={removeFavoriteScene}
+            />
+          {/each}
+        </div>
+      {/if}
+      <div class="zone-group-footer">
+        <button onclick={() => (addFavoriteFormOpen = true)} disabled={!favoritesLoaded}>+ Add</button>
+      </div>
+    {/if}
+  </section>
+
   <div class="layout">
     <aside class="bulbs-panel" class:collapsed={bulbsCollapsed}>
       <div class="section-header">
@@ -867,13 +959,6 @@
           onClose={() => (createFormZone = null)}
         />
       {/if}
-      {#if addFavoriteFormOpen}
-        <AddFavoriteForm
-          groups={addFavoriteGroups}
-          onAdd={addFavorites}
-          onClose={() => (addFavoriteFormOpen = false)}
-        />
-      {/if}
       {#if scenesLoading || zonesLoading}
         <p>Loading scenes…</p>
       {:else if scenesError}
@@ -884,12 +969,6 @@
           <p class="error">
             Couldn't load zones ({zonesError}) — showing scenes ungrouped.
             <button onclick={loadZones}>Retry</button>
-          </p>
-        {/if}
-        {#if favoritesError}
-          <p class="error">
-            Couldn't load favorites ({favoritesError}).
-            <button onclick={loadFavorites}>Retry</button>
           </p>
         {/if}
         {#if zoneGroups.length === 0}
@@ -913,9 +992,7 @@
             </div>
             {#if !isGroupCollapsed(group.id)}
               {#if group.scenes.length === 0}
-                <p class="hint">
-                  {group.isFavorites ? 'No favorite scenes yet.' : 'No scenes in this zone yet.'}
-                </p>
+                <p class="hint">No scenes in this zone yet.</p>
               {:else}
                 <div class="grid">
                   {#each group.scenes as scene (scene.id)}
@@ -925,7 +1002,6 @@
                       onPlay={playScene}
                       onStop={stopScene}
                       onSpeedChange={setSceneSpeed}
-                      onRemoveFavorite={group.isFavorites ? removeFavorite : undefined}
                     />
                   {/each}
                 </div>
@@ -933,11 +1009,6 @@
               {#if group.isZone}
                 <div class="zone-group-footer">
                   <button onclick={() => (createFormZone = group)}>+ New Scene</button>
-                </div>
-              {/if}
-              {#if group.isFavorites}
-                <div class="zone-group-footer">
-                  <button onclick={() => (addFavoriteFormOpen = true)}>+ Add</button>
                 </div>
               {/if}
             {/if}
@@ -1046,6 +1117,25 @@
     filter: brightness(0.95);
   }
 
+  .favorites-section {
+    margin-top: 2.5rem;
+  }
+
+  .favorites-section .section-header {
+    justify-content: flex-start;
+    margin-bottom: 1.25rem;
+  }
+
+  .favorites-section h2 {
+    margin: 0;
+    font-size: 1.15rem;
+    letter-spacing: -0.01em;
+  }
+
+  .favorites-section .grid {
+    align-items: start;
+  }
+
   .layout {
     display: flex;
     align-items: flex-start;
@@ -1147,8 +1237,13 @@
     transition: filter 0.15s ease;
   }
 
-  .zone-group-footer button:hover {
+  .zone-group-footer button:hover:not(:disabled) {
     filter: brightness(0.95);
+  }
+
+  .zone-group-footer button:disabled {
+    opacity: 0.55;
+    cursor: default;
   }
 
   .grid {
