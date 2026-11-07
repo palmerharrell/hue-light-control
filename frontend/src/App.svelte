@@ -836,6 +836,7 @@
     <ImportThemeForm onImport={importTheme} onClose={() => (importThemeFormOpen = false)} />
   {/if}
 
+  <div class="top-row">
   <section class="favorites-section">
     <div class="section-header">
       <button
@@ -896,6 +897,23 @@
     {/if}
   </section>
 
+  {#if !lightsLoading && !lightsError && colorLights.length > 0}
+    <div class="color-bulbs-panel">
+      <ColorBulbsControl
+        {colorLights}
+        playing={colorCycle.playing}
+        speed={colorCycle.speed}
+        palette={colorCycle.palette}
+        onRandomize={randomizeColorBulbs}
+        onSetBrightness={setColorBulbsBrightness}
+        onTogglePlay={toggleColorCycle}
+        onSpeedChange={setColorCycleSpeed}
+        onPaletteChange={setColorCyclePalette}
+      />
+    </div>
+  {/if}
+  </div>
+
   <div class="layout">
     <aside class="bulbs-panel" class:collapsed={bulbsCollapsed}>
       <div class="section-header">
@@ -918,19 +936,6 @@
         {:else if lights.length === 0}
           <p>No bulbs found.</p>
         {:else}
-          {#if colorLights.length > 0}
-            <ColorBulbsControl
-              {colorLights}
-              playing={colorCycle.playing}
-              speed={colorCycle.speed}
-              palette={colorCycle.palette}
-              onRandomize={randomizeColorBulbs}
-              onSetBrightness={setColorBulbsBrightness}
-              onTogglePlay={toggleColorCycle}
-              onSpeedChange={setColorCycleSpeed}
-              onPaletteChange={setColorCyclePalette}
-            />
-          {/if}
           <div class="bulbs-list">
             {#each lights as light (light.id)}
               <LightCard
@@ -1117,8 +1122,24 @@
     filter: brightness(0.95);
   }
 
-  .favorites-section {
+  /* Favorites (flexible) with the Color Bulbs control as a fixed-width card
+     to its right; same 18rem as the Bulbs column below. Favorites takes the
+     full width when there are no color bulbs. */
+  .top-row {
+    display: flex;
+    align-items: flex-start;
+    gap: 2rem;
     margin-top: 2.5rem;
+  }
+
+  .favorites-section {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+
+  .color-bulbs-panel {
+    flex: 0 0 18rem;
+    min-width: 0;
   }
 
   .favorites-section .section-header {
@@ -1158,8 +1179,14 @@
   }
 
   @media (max-width: 55rem) {
-    .layout {
+    .layout,
+    .top-row {
       flex-direction: column;
+    }
+
+    .color-bulbs-panel {
+      flex-basis: auto;
+      width: 100%;
     }
 
     .bulbs-panel {
