@@ -1,7 +1,27 @@
 <script>
   import BrightnessSlider from './BrightnessSlider.svelte'
 
-  let { light, onToggle, onBrightnessChange, onColorChange, onColorTempChange } = $props()
+  // onRemoveFavorite, when set, renders a small remove button (issue #81) —
+  // only passed by App.svelte for cards rendered in the Favorites section,
+  // same convention as SceneCard.
+  let { light, onToggle, onBrightnessChange, onColorChange, onColorTempChange, onRemoveFavorite } = $props()
+
+  let removePending = $state(false)
+  let removeError = $state(null)
+
+  async function removeFavorite(event) {
+    // The card itself toggles the light on click.
+    event.stopPropagation()
+    if (removePending) return
+    removePending = true
+    removeError = null
+    try {
+      await onRemoveFavorite(light.id)
+    } catch (err) {
+      removeError = err.message
+      removePending = false
+    }
+  }
 
   // Serializes toggle clicks for this card: while a PUT is in flight the
   // button is disabled, so a fast double-click can't fire a second request
@@ -24,7 +44,7 @@
   // — a click that lands in any of them (checked via closest, since the
   // actual input elements are what's clicked) shouldn't also toggle the
   // light.
-  const CONTROL_SELECTOR = '.swatch, .slider-wrap, .color-wrap, .ct-wrap'
+  const CONTROL_SELECTOR = '.swatch, .slider-wrap, .color-wrap, .ct-wrap, .remove-favorite'
 
   function handleCardClick(event) {
     if (event.target.closest(CONTROL_SELECTOR)) return
@@ -57,15 +77,30 @@
       style:box-shadow={light.on ? `0 0 0.5rem ${light.color ?? '#ffe9b3'}` : undefined}
     ></span>
     <span class="name">{light.name}</span>
+    {#if onRemoveFavorite}
+      <button
+        type="button"
+        class="remove-favorite"
+        disabled={removePending}
+        title="Remove from Favorites"
+        aria-label="Remove {light.name} from Favorites"
+        onclick={removeFavorite}
+      >
+        ✕
+      </button>
+    {/if}
   </div>
 
-  {#if !light.reachable || light.toggleError}
+  {#if !light.reachable || light.toggleError || removeError}
     <div class="status">
       {#if !light.reachable}
         <span class="badge unreachable-badge">Unreachable</span>
       {/if}
       {#if light.toggleError}
         <span class="badge error-badge">{light.toggleError}</span>
+      {/if}
+      {#if removeError}
+        <span class="badge error-badge">{removeError}</span>
       {/if}
     </div>
   {/if}
@@ -174,6 +209,33 @@
 
   .name {
     font-weight: 600;
+  }
+
+  .remove-favorite {
+    margin-left: auto;
+    flex-shrink: 0;
+    width: 1.75rem;
+    height: 1.75rem;
+    border-radius: 50%;
+    border: 1px solid var(--border);
+    background: var(--surface-alt);
+    font-size: 0.7rem;
+    line-height: 1;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    cursor: pointer;
+    color: inherit;
+  }
+
+  .remove-favorite:hover:not(:disabled) {
+    filter: brightness(0.95);
+    color: var(--error-text);
+  }
+
+  .remove-favorite:disabled {
+    opacity: 0.55;
+    cursor: default;
   }
 
   .status {
