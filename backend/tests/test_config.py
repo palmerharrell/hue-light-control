@@ -54,3 +54,27 @@ def test_load_config_empty_file_returns_defaults(tmp_path, monkeypatch):
     monkeypatch.setattr(config_module, "CONFIG_PATH", config_path)
 
     assert load_config() == BridgeConfig()
+
+
+def test_update_favorites_only_touches_provided_lists(tmp_path, monkeypatch):
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text(
+        "bridge_ip: 192.168.x.x\napi_key: test-api-key\nfavorite_scene_ids: [s1]\nfavorite_light_ids: [l1]\n"
+    )
+    monkeypatch.setattr(config_module, "CONFIG_PATH", config_path)
+
+    config_module.update_favorites(light_ids=["l2", "l3"])
+
+    reloaded = load_config()
+    assert reloaded.favorite_scene_ids == ["s1"]
+    assert reloaded.favorite_light_ids == ["l2", "l3"]
+    assert reloaded.api_key == "test-api-key"
+
+
+def test_load_config_without_favorite_light_ids_defaults_to_empty(tmp_path, monkeypatch):
+    # A config.yaml written before issue #81 has no favorite_light_ids key.
+    config_path = tmp_path / "config.yaml"
+    config_path.write_text("bridge_ip: 192.168.x.x\napi_key: test-api-key\nfavorite_scene_ids: [s1]\n")
+    monkeypatch.setattr(config_module, "CONFIG_PATH", config_path)
+
+    assert load_config().favorite_light_ids == []

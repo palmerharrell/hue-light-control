@@ -14,7 +14,7 @@ from app.config import (
     add_custom_theme,
     load_config,
     remove_custom_theme,
-    update_favorite_scene_ids,
+    update_favorites,
 )
 from app import hue_client, mock_hue_client
 from app.hue_client import BridgeNotConfigured, BridgeUnreachable, Light, Scene, Zone
@@ -205,21 +205,30 @@ async def set_scene_speed_route(scene_id: str, body: SceneSpeedRequest):
     return {"status": "ok"}
 
 
-class FavoritesUpdate(BaseModel):
+class Favorites(BaseModel):
     scene_ids: list[str]
+    light_ids: list[str]
+
+
+class FavoritesUpdate(BaseModel):
+    # Either field may be omitted to leave that list unchanged.
+    scene_ids: Optional[list[str]] = None
+    light_ids: Optional[list[str]] = None
 
 
 @app.get("/api/favorites")
-def list_favorites() -> list[str]:
+def list_favorites() -> Favorites:
     # Local UI preference, not bridge data — works even when the bridge
     # isn't configured, unlike the scene/zone/light routes.
     config = load_config()
-    return config.favorite_scene_ids
+    return Favorites(scene_ids=config.favorite_scene_ids, light_ids=config.favorite_light_ids)
 
 
 @app.put("/api/favorites")
-def update_favorites(body: FavoritesUpdate):
-    update_favorite_scene_ids(body.scene_ids)
+def update_favorites_route(body: FavoritesUpdate):
+    if body.scene_ids is None and body.light_ids is None:
+        raise HTTPException(status_code=422, detail="scene_ids or light_ids is required")
+    update_favorites(scene_ids=body.scene_ids, light_ids=body.light_ids)
     return {"status": "ok"}
 
 

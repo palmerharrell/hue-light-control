@@ -45,6 +45,10 @@ class BridgeConfig(BaseModel):
     # data, so it lives alongside bridge_ip/api_key in the same local config
     # rather than requiring a separate store.
     favorite_scene_ids: list[str] = []
+    # Favorited light ids (issue #81) — same local-preference treatment as
+    # favorite_scene_ids. Defaults to empty so a config.yaml written before
+    # this field existed still loads.
+    favorite_light_ids: list[str] = []
     # User-imported themes (issue #21). The built-in "Default - Dark" /
     # "Default - Light" themes ship as frontend code, not here — this only
     # holds themes imported at runtime via POST /api/themes.
@@ -86,10 +90,15 @@ def update_bridge_ip(ip: str) -> None:
         _write_config(config)
 
 
-def update_favorite_scene_ids(scene_ids: list[str]) -> None:
+def update_favorites(scene_ids: Optional[list[str]] = None, light_ids: Optional[list[str]] = None) -> None:
+    # None means "leave that list as it is", so a caller changing only one
+    # kind of favorite can't clobber the other.
     with _config_write_lock:
         config = load_config()
-        config.favorite_scene_ids = scene_ids
+        if scene_ids is not None:
+            config.favorite_scene_ids = scene_ids
+        if light_ids is not None:
+            config.favorite_light_ids = light_ids
         _write_config(config)
 
 

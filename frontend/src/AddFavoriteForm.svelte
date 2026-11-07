@@ -1,25 +1,32 @@
 <script>
   import FormDialog from './FormDialog.svelte'
 
-  // Zone groups ({ id, name, scenes }) holding only scenes not already in
-  // Favorites, empty groups dropped — the caller (App.svelte) builds this
-  // from its zoneGroups, same division of labor as CreateSceneForm. Grouping
-  // matters because many scenes share a name across zones.
-  let { groups, onAdd, onClose } = $props()
+  // `sceneGroups`: zone groups ({ id, name, scenes }) holding only scenes not
+  // already in Favorites, empty groups dropped. `lights`: lights not already
+  // in Favorites. The caller (App.svelte) builds both from its own state,
+  // same division of labor as CreateSceneForm. Grouping scenes matters
+  // because many scenes share a name across zones.
+  let { sceneGroups, lights, onAdd, onClose } = $props()
 
   let dialogEl = $state(null)
-  let selectedIds = $state([])
+  let selectedSceneIds = $state([])
+  let selectedLightIds = $state([])
   let submitting = $state(false)
   let error = $state(null)
 
-  // A scene can vanish from `groups` while the dialog is open (refresh, or
+  // An item can vanish from the lists while the dialog is open (refresh, or
   // favorited elsewhere); only submit ids the user can still see ticked.
-  let chosenIds = $derived.by(() => {
-    const visible = new Set(groups.flatMap((group) => group.scenes.map((scene) => scene.id)))
-    return selectedIds.filter((id) => visible.has(id))
+  let chosenSceneIds = $derived.by(() => {
+    const visible = new Set(sceneGroups.flatMap((group) => group.scenes.map((scene) => scene.id)))
+    return selectedSceneIds.filter((id) => visible.has(id))
   })
 
-  let canSubmit = $derived(chosenIds.length > 0 && !submitting)
+  let chosenLightIds = $derived.by(() => {
+    const visible = new Set(lights.map((light) => light.id))
+    return selectedLightIds.filter((id) => visible.has(id))
+  })
+
+  let canSubmit = $derived(chosenSceneIds.length + chosenLightIds.length > 0 && !submitting)
 
   async function handleSubmit(event) {
     event.preventDefault()
@@ -27,7 +34,7 @@
     submitting = true
     error = null
     try {
-      await onAdd(chosenIds)
+      await onAdd(chosenSceneIds, chosenLightIds)
       dialogEl?.close()
     } catch (err) {
       error = err.message
@@ -40,18 +47,34 @@
   <form class="dialog-form" onsubmit={handleSubmit}>
     <h2>Add to Favorites</h2>
 
-    {#if groups.length === 0}
-      <p class="hint">Every scene is already in Favorites.</p>
-    {:else}
+    {#if sceneGroups.length === 0 && lights.length === 0}
+      <p class="hint">Everything is already in Favorites.</p>
+    {/if}
+
+    {#if lights.length > 0}
+      <fieldset class="field">
+        <legend>Lights</legend>
+        <div class="option-list">
+          {#each lights as light (light.id)}
+            <label class="option-row">
+              <input type="checkbox" bind:group={selectedLightIds} value={light.id} />
+              {light.name}
+            </label>
+          {/each}
+        </div>
+      </fieldset>
+    {/if}
+
+    {#if sceneGroups.length > 0}
       <fieldset class="field">
         <legend>Scenes</legend>
         <div class="option-list tall">
-          {#each groups as group (group.id)}
+          {#each sceneGroups as group (group.id)}
             <div class="option-group" role="group" aria-labelledby="favorite-group-{group.id}">
               <div class="option-group-heading" id="favorite-group-{group.id}">{group.name}</div>
               {#each group.scenes as scene (scene.id)}
                 <label class="option-row">
-                  <input type="checkbox" bind:group={selectedIds} value={scene.id} />
+                  <input type="checkbox" bind:group={selectedSceneIds} value={scene.id} />
                   {scene.name}
                 </label>
               {/each}
