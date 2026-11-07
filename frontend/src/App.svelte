@@ -30,13 +30,20 @@
   let favoriteSceneIds = $state([])
   let favoriteLightIds = $state([])
   let favoritesError = $state(null)
+  // Adding/removing writes whole id lists back to the server, so it's only
+  // safe once the real saved lists have loaded — otherwise a PUT built from
+  // the empty defaults would overwrite them.
+  let favoritesLoaded = $state(false)
 
   async function loadFavorites() {
     favoritesError = null
     try {
       const favorites = await fetchJson('/api/favorites')
-      favoriteSceneIds = favorites.scene_ids
-      favoriteLightIds = favorites.light_ids
+      // `?? []` so a response from a mismatched backend version (e.g. mid-
+      // deploy) degrades to "no favorites" instead of crashing the page.
+      favoriteSceneIds = favorites?.scene_ids ?? []
+      favoriteLightIds = favorites?.light_ids ?? []
+      favoritesLoaded = true
     } catch (err) {
       favoritesError = err.message
     }
@@ -258,8 +265,7 @@
   // to load. Every real zone is kept even with no scenes yet (isZone: true),
   // so its "New Scene" button (issue #30) has somewhere to live; "Other"
   // isn't a real zone (no per-zone create button applies to it) and is
-  // dropped when empty.
-  //
+  // dropped when empty. Favorites is not a zone — see favoriteScenes below.
   let zoneGroups = $derived.by(() => {
     const byId = new Map(
       zones.map((zone) => [
@@ -607,15 +613,17 @@
   // the current ids) after the previous one has fully applied.
   let favoritesQueue = Promise.resolve()
 
-  // `kind` is 'scene' or 'light'; `computeUpdated` maps that kind's current
-  // id list to the new one. Only that list is sent, so the backend leaves
-  // the other kind alone.
-  function queueFavoritesUpdate(kind, computeUpdated) {
+  // `computeUpdated` maps the current { scene_ids, light_ids } to a partial
+  // update containing only the lists to change (the backend leaves an
+  // omitted list alone). Everything in one update goes out as a single PUT,
+  // so it applies all-or-nothing.
+  function queueFavoritesUpdate(computeUpdated) {
     const run = favoritesQueue.then(async () => {
-      const updated = computeUpdated(kind === 'scene' ? favoriteSceneIds : favoriteLightIds)
-      await putJson('/api/favorites', { [`${kind}_ids`]: updated })
-      if (kind === 'scene') favoriteSceneIds = updated
-      else favoriteLightIds = updated
+      if (!favoritesLoaded) throw new Error("Favorites haven't loaded yet")
+      const update = computeUpdated({ scene_ids: favoriteSceneIds, light_ids: favoriteLightIds })
+      await putJson('/api/favorites', update)
+      if (update.scene_ids) favoriteSceneIds = update.scene_ids
+      if (update.light_ids) favoriteLightIds = update.light_ids
     })
     // Keep the chain alive even after a failed update — the caller below
     // still sees the rejection via `run`, but the *next* queued mutation
@@ -624,23 +632,25 @@
     return run
   }
 
-  const addIds = (additions) => (current) => [...new Set([...current, ...additions])]
-  const removeId = (id) => (current) => current.filter((existing) => existing !== id)
-
-  // Scenes and lights are two independent PUTs; if the second fails after the
-  // first succeeded, the first stays applied and the dialog reports the error
-  // — re-submitting is harmless since adds are idempotent.
   async function addFavorites(sceneIds, lightIds) {
-    if (sceneIds.length > 0) await queueFavoritesUpdate('scene', addIds(sceneIds))
-    if (lightIds.length > 0) await queueFavoritesUpdate('light', addIds(lightIds))
+    await queueFavoritesUpdate((current) => {
+      const update = {}
+      if (sceneIds.length > 0) update.scene_ids = [...new Set([...current.scene_ids, ...sceneIds])]
+      if (lightIds.length > 0) update.light_ids = [...new Set([...current.light_ids, ...lightIds])]
+      return update
+    })
   }
 
   async function removeFavoriteScene(sceneId) {
-    await queueFavoritesUpdate('scene', removeId(sceneId))
+    await queueFavoritesUpdate((current) => ({
+      scene_ids: current.scene_ids.filter((id) => id !== sceneId),
+    }))
   }
 
   async function removeFavoriteLight(lightId) {
-    await queueFavoritesUpdate('light', removeId(lightId))
+    await queueFavoritesUpdate((current) => ({
+      light_ids: current.light_ids.filter((id) => id !== lightId),
+    }))
   }
 
   // Unlike toggleLight, there's no meaningful "prior value" to optimistically
@@ -846,14 +856,14 @@
         onClose={() => (addFavoriteFormOpen = false)}
       />
     {/if}
+    {#if favoritesError}
+      <p class="error">
+        Couldn't load favorites ({favoritesError}).
+        <button onclick={loadFavorites}>Retry</button>
+      </p>
+    {/if}
     {#if !favoritesCollapsed}
-      {#if favoritesError}
-        <p class="error">
-          Couldn't load favorites ({favoritesError}).
-          <button onclick={loadFavorites}>Retry</button>
-        </p>
-      {/if}
-      {#if favoriteScenes.length === 0 && favoriteLights.length === 0}
+      {#if favoritesLoaded && !scenesLoading && !lightsLoading && favoriteScenes.length === 0 && favoriteLights.length === 0}
         <p class="hint">No favorites yet.</p>
       {/if}
       {#if favoriteScenes.length > 0 || favoriteLights.length > 0}
@@ -881,7 +891,7 @@
         </div>
       {/if}
       <div class="zone-group-footer">
-        <button onclick={() => (addFavoriteFormOpen = true)}>+ Add</button>
+        <button onclick={() => (addFavoriteFormOpen = true)} disabled={!favoritesLoaded}>+ Add</button>
       </div>
     {/if}
   </section>
@@ -1227,8 +1237,13 @@
     transition: filter 0.15s ease;
   }
 
-  .zone-group-footer button:hover {
+  .zone-group-footer button:hover:not(:disabled) {
     filter: brightness(0.95);
+  }
+
+  .zone-group-footer button:disabled {
+    opacity: 0.55;
+    cursor: default;
   }
 
   .grid {
