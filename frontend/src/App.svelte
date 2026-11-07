@@ -837,81 +837,85 @@
   {/if}
 
   <div class="top-row">
-  <section class="favorites-section">
-    <div class="section-header">
-      <button
-        class="collapse-toggle"
-        onclick={() => (favoritesCollapsed = !favoritesCollapsed)}
-        aria-expanded={!favoritesCollapsed}
-        aria-label={favoritesCollapsed ? 'Expand Favorites' : 'Collapse Favorites'}
-      >
-        <span class="chevron" class:collapsed={favoritesCollapsed}>▾</span>
-      </button>
-      <h2>Favorites</h2>
-    </div>
-    {#if addFavoriteFormOpen}
-      <AddFavoriteForm
-        sceneGroups={addFavoriteSceneGroups}
-        lights={addFavoriteLights}
-        onAdd={addFavorites}
-        onClose={() => (addFavoriteFormOpen = false)}
-      />
-    {/if}
-    {#if favoritesError}
-      <p class="error">
-        Couldn't load favorites ({favoritesError}).
-        <button onclick={loadFavorites}>Retry</button>
-      </p>
-    {/if}
-    {#if !favoritesCollapsed}
-      {#if favoritesLoaded && !scenesLoading && !lightsLoading && favoriteScenes.length === 0 && favoriteLights.length === 0}
-        <p class="hint">No favorites yet.</p>
+    <section class="favorites-section">
+      <div class="section-header">
+        <button
+          class="collapse-toggle"
+          onclick={() => (favoritesCollapsed = !favoritesCollapsed)}
+          aria-expanded={!favoritesCollapsed}
+          aria-label={favoritesCollapsed ? 'Expand Favorites' : 'Collapse Favorites'}
+        >
+          <span class="chevron" class:collapsed={favoritesCollapsed}>▾</span>
+        </button>
+        <h2>Favorites</h2>
+      </div>
+      {#if addFavoriteFormOpen}
+        <AddFavoriteForm
+          sceneGroups={addFavoriteSceneGroups}
+          lights={addFavoriteLights}
+          onAdd={addFavorites}
+          onClose={() => (addFavoriteFormOpen = false)}
+        />
       {/if}
-      {#if favoriteScenes.length > 0 || favoriteLights.length > 0}
-        <div class="grid">
-          {#each favoriteLights as light (light.id)}
-            <LightCard
-              {light}
-              onToggle={toggleLight}
-              onBrightnessChange={setLightBrightness}
-              onColorChange={setLightColor}
-              onColorTempChange={setLightColorTemp}
-              onRemoveFavorite={removeFavoriteLight}
-            />
-          {/each}
-          {#each favoriteScenes as scene (scene.id)}
-            <SceneCard
-              {scene}
-              onActivate={activateScene}
-              onPlay={playScene}
-              onStop={stopScene}
-              onSpeedChange={setSceneSpeed}
-              onRemoveFavorite={removeFavoriteScene}
-            />
-          {/each}
+      {#if favoritesError}
+        <p class="error">
+          Couldn't load favorites ({favoritesError}).
+          <button onclick={loadFavorites}>Retry</button>
+        </p>
+      {/if}
+      {#if !favoritesCollapsed}
+        {#if favoritesLoaded && !scenesLoading && !lightsLoading && favoriteScenes.length === 0 && favoriteLights.length === 0}
+          <p class="hint">No favorites yet.</p>
+        {/if}
+        {#if favoriteScenes.length > 0 || favoriteLights.length > 0}
+          <div class="grid">
+            {#each favoriteLights as light (light.id)}
+              <LightCard
+                {light}
+                onToggle={toggleLight}
+                onBrightnessChange={setLightBrightness}
+                onColorChange={setLightColor}
+                onColorTempChange={setLightColorTemp}
+                onRemoveFavorite={removeFavoriteLight}
+              />
+            {/each}
+            {#each favoriteScenes as scene (scene.id)}
+              <SceneCard
+                {scene}
+                onActivate={activateScene}
+                onPlay={playScene}
+                onStop={stopScene}
+                onSpeedChange={setSceneSpeed}
+                onRemoveFavorite={removeFavoriteScene}
+              />
+            {/each}
+          </div>
+        {/if}
+        <div class="zone-group-footer">
+          <button onclick={() => (addFavoriteFormOpen = true)} disabled={!favoritesLoaded}>+ Add</button>
         </div>
       {/if}
-      <div class="zone-group-footer">
-        <button onclick={() => (addFavoriteFormOpen = true)} disabled={!favoritesLoaded}>+ Add</button>
+    </section>
+
+    <!-- Gated only on colorLights, not the lights loading/error state: a
+         refresh or failed refetch shouldn't unmount the control (losing its
+         local state, or the Stop button while a color cycle is running) —
+         `lights` keeps its last-known contents through both. -->
+    {#if colorLights.length > 0}
+      <div class="color-bulbs-panel">
+        <ColorBulbsControl
+          {colorLights}
+          playing={colorCycle.playing}
+          speed={colorCycle.speed}
+          palette={colorCycle.palette}
+          onRandomize={randomizeColorBulbs}
+          onSetBrightness={setColorBulbsBrightness}
+          onTogglePlay={toggleColorCycle}
+          onSpeedChange={setColorCycleSpeed}
+          onPaletteChange={setColorCyclePalette}
+        />
       </div>
     {/if}
-  </section>
-
-  {#if !lightsLoading && !lightsError && colorLights.length > 0}
-    <div class="color-bulbs-panel">
-      <ColorBulbsControl
-        {colorLights}
-        playing={colorCycle.playing}
-        speed={colorCycle.speed}
-        palette={colorCycle.palette}
-        onRandomize={randomizeColorBulbs}
-        onSetBrightness={setColorBulbsBrightness}
-        onTogglePlay={toggleColorCycle}
-        onSpeedChange={setColorCycleSpeed}
-        onPaletteChange={setColorCyclePalette}
-      />
-    </div>
-  {/if}
   </div>
 
   <div class="layout">
@@ -1140,6 +1144,9 @@
   .color-bulbs-panel {
     flex: 0 0 18rem;
     min-width: 0;
+    /* Line the card up with the Favorites cards rather than the Favorites
+       heading: the heading row (1.75rem) plus its bottom margin (1.25rem). */
+    margin-top: 3rem;
   }
 
   .favorites-section .section-header {
@@ -1184,9 +1191,16 @@
       flex-direction: column;
     }
 
+    /* Stretch so Favorites fills the row like the Color Bulbs card, instead
+       of shrink-wrapping its content. */
+    .top-row {
+      align-items: stretch;
+    }
+
     .color-bulbs-panel {
       flex-basis: auto;
       width: 100%;
+      margin-top: 0;
     }
 
     .bulbs-panel {
