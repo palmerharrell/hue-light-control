@@ -114,7 +114,6 @@
     gap: 0.6rem;
     background: var(--surface);
     box-shadow: 0 1px 2px var(--shadow-color);
-    margin-bottom: 0.75rem;
   }
 
   .title {
